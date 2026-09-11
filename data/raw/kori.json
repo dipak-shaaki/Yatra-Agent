@@ -1,0 +1,35 @@
+{
+  "id": "kori",
+  "name": "Kori (Kori Danda)",
+  "province": "Gandaki",
+  "district": "Kaski/Lamjung",
+  "type": "trek",
+  "summary": "A newly popularized, off-the-beaten-path trek in the Annapurna Conservation Area near Sikles village, referred to as the 'center point of Nepal'. Offers alpine meadow scenery, Gurung culture, and views of Annapurna II and Lamjung Himal, plus a side visit to Kapuche Lake, a glacial lake. Increasingly popular among domestic tourists seeking a quieter alternative to ABC and Mardi Himal.",
+  "best_time_to_visit": {
+    "primary": "March to May (spring) and September to November (autumn)",
+    "notes": "Spring brings rhododendron blooms. Autumn offers crisp air and clear mountain visibility. Winter is also trekkable with snowy alpine landscapes but colder temperatures."
+  },
+  "route_from_kathmandu": {
+    "trailhead": "Sikles village, reached via Pokhara",
+    "transport_options": [
+      "Kathmandu to Pokhara: flight or drive (6-7 hours)",
+      "Pokhara to Sikles: off-road jeep drive"
+    ]
+  },
+  "difficulty_level": "Moderate",
+  "difficulty_notes": "Ideal for beginners seeking solitude; daily walking of 5-7 hours. Highest point Kori Danda sits around 3,600-3,800m. Risk of altitude sickness is relatively low since overnight stops remain below many high-altitude routes, but nights can be cold (below 0°C).",
+  "time_required": "approx 6 days",
+  "max_altitude_m": 3800,
+  "permits_required": [
+    "Annapurna Conservation Area Permit (ACAP)",
+    "TIMS card"
+  ],
+  "culture_notes": "Passes through Sikles and Tangting, among Nepal's largest Gurung communities, many with strong Gurkha (British/Indian Army) heritage. Homestay-based accommodation offers direct cultural engagement.",
+  "connectivity_notes": "Limited mobile network coverage (NTC works in Sikles and parts to Tangting; no network at higher points like Hugu Goth or Kori itself).",
+  "source_urls": [
+    "https://nepaltraveller.com/sidetrack/kori-nepal",
+    "https://www.langtangtreks.com/blog/kori-trek/",
+    "https://nepal360news.com/post/travelling/kori-trek-hidden-gem-of-the-annapurna-region",
+    "https://www.nepalindependentguide.com/activities/kori-trek/"
+  ]
+}

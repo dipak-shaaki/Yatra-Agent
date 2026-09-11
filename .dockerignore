@@ -3,4 +3,4 @@ __pycache__
 *.pyc
 .git
 data/chroma_db
-.env
+app/core/.env

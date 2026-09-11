@@ -1,0 +1,36 @@
+{
+  "id": "gorkha",
+  "name": "Gorkha",
+  "province": "Gandaki",
+  "district": "Gorkha",
+  "type": "historic town",
+  "summary": "Historic hilltop town and birthplace of King Prithvi Narayan Shah, who unified Nepal in the 18th century. The Gorkha Durbar (palace) complex combines royal palace, fort, and temple architecture atop a hill overlooking the Trisuli Valley, with panoramic views of Manaslu, Himalchuli, Ganesh Himal, and the Annapurna range. A UNESCO-recognized heritage site, rebuilt after damage in the 2015 earthquake.",
+  "best_time_to_visit": {
+    "primary": "October to May (aligns with Nepal's main trekking season); spring (March-May) and autumn (September-November) specifically recommended",
+    "notes": "June to September is hot, humid, and monsoon clouds obscure mountain views."
+  },
+  "route_from_kathmandu": {
+    "transport_options": [
+      "Regular buses and private vehicles from Kathmandu to Gorkha Bazaar (approx 5-6 hours)",
+      "Also reachable via Abu Khaireni on the Kathmandu-Pokhara highway route"
+    ],
+    "within_gorkha": "From Gorkha Bazaar, climb approx 1,500-1,700 stone steps (30-45 minutes) to reach Gorkha Durbar, or take a taxi/jeep via an alternate road to a shorter, less strenuous route"
+  },
+  "difficulty_level": "Easy to moderate (steep stair climb to the palace, but no trekking gear needed)",
+  "time_required": "Day trip, or overnight for a more relaxed visit including sunrise views",
+  "things_to_do": [
+    "Explore Gorkha Durbar palace complex and Gorkha Durbar Museum",
+    "Visit the 17th-century Kalika Temple within the durbar grounds",
+    "Watch sunrise over the Himalayas from the palace hilltop",
+    "Explore Gorkha Bazaar market",
+    "Try local dal bhat and other Nepali street food"
+  ],
+  "practical_notes": "Gorkha Durbar site is generally open daily (commonly cited hours around 9am-5pm), with affordable entry fees for both domestic and international visitors. Hiring a local guide is optional but adds historical context.",
+  "culture_notes": "The site holds deep spiritual significance for Nepalis as the birthplace of unified Nepal; animal sacrifices to the goddess Kali still take place at the temple on significant lunar dates.",
+  "source_urls": [
+    "https://www.tourtravelworld.com/nepal/gorkha/gorkha-durbar.htm",
+    "https://www.holidify.com/country/nepal/gorkha-sightseeing-124811.html",
+    "https://travellingmandala.com/things-to-do-in-gorkha/",
+    "https://www.nepaltourhiking.com/nepal-travel-guide/tourist-places-in-nepal/gorkha-durbar/"
+  ]
+}

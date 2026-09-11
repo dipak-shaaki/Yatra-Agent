@@ -1,0 +1,37 @@
+{
+  "id": "panauti",
+  "name": "Panauti",
+  "province": "Bagmati",
+  "district": "Kavrepalanchok",
+  "type": "heritage village",
+  "summary": "One of Nepal's oldest and best-preserved medieval towns, sitting at the confluence of the Roshi and Punyamati rivers (Tribeni), about 32km southeast of Kathmandu. Home to around 40 temples, including the Indreshwar Mahadev Temple (dating to 1294, believed to be the oldest surviving wooden temple in Nepal). Retains well-preserved Newari architecture and a slower pace of life largely unchanged for centuries, with far fewer tourists than Bhaktapur or Patan.",
+  "best_time_to_visit": {
+    "primary": "Year-round as a day trip; spring (March-May) and autumn (September-November) for best weather",
+    "notes": "Panauti hosts 28 different festivals across the year; visiting during a festival (e.g. the bi-monthly aarti puja) adds cultural richness. Monsoon (June-August) brings heavy rain."
+  },
+  "route_from_kathmandu": {
+    "distance_km": "approx 32 km southeast of Kathmandu",
+    "transport_options": [
+      "Local bus from Ratna Park bus park, approx 1-1.5 hours, low cost",
+      "Private car/taxi, faster and more flexible",
+      "Combine with a scenic hike from Sanga (approx 10km, easy-moderate difficulty) as an alternative arrival route"
+    ]
+  },
+  "difficulty_level": "Easy (walkable heritage town)",
+  "time_required": "Half-day to 1 day trip; 2 nights recommended if doing a homestay",
+  "things_to_do": [
+    "Self-guided heritage walk through the old town and Tribeni river confluence",
+    "Visit Indreshwar Mahadev Temple and adjoining Panauti Museum",
+    "Visit Brahmayani Temple (17th century)",
+    "Day hike to Namo Buddha, a Tibetan Buddhist pilgrimage site with a monastery, about 250m uphill climb from Panauti",
+    "Bike tour through surrounding villages, orange farms, and Khopasi",
+    "Community homestay experience with local Newari families"
+  ],
+  "culture_notes": "Panauti is often described as a commuter town relatively untouched by mass tourism, offering an authentic alternative to more visited Newari heritage towns like Bhaktapur.",
+  "source_urls": [
+    "https://www.thelongestwayhome.com/travel-guides/nepal/panauti/guide-to-panauti.html",
+    "https://whatthenepal.com/2023/05/23/panauti-nepal-the-land-of-history-and-culture/",
+    "https://wherecharliewanders.com/guide-to-visiting-panauti/",
+    "https://communityhomestay.com/blog/top-things-todo-panauti-nepal"
+  ]
+}

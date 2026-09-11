@@ -1,0 +1,39 @@
+{
+  "id": "tansen_palpa",
+  "name": "Tansen (Palpa)",
+  "province": "Lumbini",
+  "district": "Palpa",
+  "type": "hill town",
+  "summary": "A historic Newari-Magar hill town at 1,310m, perched above the Kali Gandaki River between Butwal and Pokhara. Former capital of the powerful Tansen (Sen) kingdom before the rise of the Shah dynasty. Known for cobbled medieval streets, traditional Dhaka fabric weaving, bronze karuwa water pots, coffee farming, and views of Dhaulagiri and Annapurna from Shreenagar Hill. Quieter and less touristy than Bandipur.",
+  "best_time_to_visit": {
+    "primary": "Year-round destination; clearest mountain views October-December and March-April",
+    "notes": "Winter months (Dec-Feb) bring atmospheric mist over the valley. Monsoon (June-August) brings heavy rain and humidity."
+  },
+  "route_from_kathmandu": {
+    "distance_km": "approx 300 km from Kathmandu",
+    "transport_options": [
+      "No direct public transport from Kathmandu - take a bus to Butwal, then shared jeep/bus to Tansen (approx 1.5 hours from Butwal)",
+      "Private taxi available for direct hire from Kathmandu"
+    ],
+    "from_pokhara": "approx 122 km, around 4 hours via Syangja",
+    "from_lumbini": "approx 45-86 km depending on route",
+    "nearest_airport": "Gautam Buddha International Airport, Bhairahwa"
+  },
+  "difficulty_level": "Easy (walkable town with short optional hikes)",
+  "time_required": "1-2 days",
+  "things_to_do": [
+    "Walk the old bazaar's cobbled streets and Newari architecture",
+    "Hike to Shreenagar Hill and View Tower for sunrise/sunset and Himalayan views (Dhaulagiri, Annapurna)",
+    "Day trip to Rani Mahal ('Taj Mahal of Nepal'), an 1894 riverside palace at the confluence of the Ridi and Kali Gandaki rivers",
+    "Visit a local coffee farm",
+    "Shop for Dhaka fabric and bronze karuwa water pots",
+    "Try local Palpali food, including hansko chhyola"
+  ],
+  "culture_notes": "Home to a mix of Magar and Newar communities; Newar traders historically settled here for the crossroads trade route, bringing distinctive architecture and craft traditions.",
+  "source_urls": [
+    "https://travellingmandala.com/things-to-do-in-tansen-palpa/",
+    "https://www.nepalhikingteam.com/tansen-palpa",
+    "https://www.wondersofnepal.com/tansen-palpa/",
+    "https://parvezish.com/travel/a-visit-to-tansen-nepal/"
+  ]
+}

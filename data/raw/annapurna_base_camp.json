@@ -1,0 +1,36 @@
+{
+  "id": "annapurna_base_camp",
+  "name": "Annapurna Base Camp (ABC)",
+  "province": "Gandaki",
+  "district": "Kaski/Myagdi",
+  "type": "trek",
+  "summary": "One of Nepal's most popular treks, leading into the dramatic Annapurna Sanctuary amphitheater surrounded by Annapurna I, Machhapuchhre (Fishtail), and Hiunchuli. Known for accessible difficulty, well-established teahouses, and rich Gurung culture along the route. Considered a good introductory Himalayan trek.",
+  "best_time_to_visit": {
+    "primary": "September to December (autumn) and March to May (spring)",
+    "notes": "Autumn gives the clearest skies and best mountain visibility. Spring brings blooming rhododendron forests (Lali Guras, Nepal's national flower). Monsoon (Jun-Aug) brings heavy rain, muddy/slippery trails, and leeches at lower elevations. Winter is cold near base camp but offers clear skies and quiet trails."
+  },
+  "route_from_kathmandu": {
+    "trailhead": "Nayapul, reached via Pokhara",
+    "transport_options": [
+      "Kathmandu to Pokhara: flight (~25 min) or bus/drive (6-7 hours)",
+      "Pokhara to Nayapul: short drive, then trek begins"
+    ]
+  },
+  "difficulty_level": "Moderate",
+  "difficulty_notes": "No technical climbing skills required, but involves long daily stretches of stone staircases (notably around Ulleri and Chhomrong) that are hard on knees. 5-7 hours of walking per day. Altitude sickness risk exists at the 4,130m base camp but is lower than on higher treks like Everest Base Camp. Suitable for fit beginners with some pre-trip training.",
+  "time_required": "7-12 days typically (14 days if combined with Ghorepani/Poon Hill)",
+  "trail_length_km": "approx 110-120 km round trip",
+  "max_altitude_m": 4130,
+  "permits_required": [
+    "Annapurna Conservation Area Permit (ACAP)",
+    "TIMS card (Trekkers' Information Management System)"
+  ],
+  "estimated_cost_usd": "varies by package/agency; commonly cited range for guided 7-12 day treks, teahouse-based",
+  "culture_notes": "Route passes through traditional Gurung villages such as Ghandruk, known for stone houses and a cultural museum.",
+  "source_urls": [
+    "https://nepalgatewaytrekking.com/blog/annapurna-base-camp-trek-difficulty",
+    "https://nepaltreksandtour.com/blog/a-complete-guide-for-annapurna-base-camp-trek",
+    "https://www.himachalpradeshtimes.com/annapurna-base-camp-trek-nepal/",
+    "https://www.natureviewtreks.com/annapurna-base-camp-trek-itinerary-cost-difficulty-tips-2025-guide/"
+  ]
+}

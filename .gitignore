@@ -1,6 +1,7 @@
-.env
+app/core/.env
 data/chroma_db/
 __pycache__/
 *.pyc
 .venv/
 .ruff_cache/
+.github/

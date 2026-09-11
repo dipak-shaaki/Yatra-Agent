@@ -1,0 +1,42 @@
+{
+  "id": "manaslu_circuit",
+  "name": "Manaslu Circuit",
+  "province": "Gandaki",
+  "district": "Gorkha",
+  "type": "trek",
+  "summary": "A remote circuit trek around Mount Manaslu (8,163m), the world's eighth-highest mountain, through the Manaslu Conservation Area near the Tibetan border. Known for fewer crowds than Everest or Annapurna, rich Tibetan-Buddhist and Gurung culture, and the high-altitude Larkya La Pass crossing.",
+  "best_time_to_visit": {
+    "primary": "September to November (autumn) and March to May (spring)",
+    "notes": "Autumn offers the most stable weather and clearest mountain views. Spring brings blooming rhododendron forests and milder temperatures. Winter (Dec-Feb) sees heavy snowfall that can close Larkya La Pass. Monsoon (Jun-Aug) brings heavy rain, leeches, landslides, and obscured mountain views."
+  },
+  "route_from_kathmandu": {
+    "trailhead": "Machha Khola (also Soti Khola or Jagat, depending on itinerary)",
+    "distance_km": "160-180 km by road",
+    "transport_options": [
+      "Public bus: 9-12 hours from Kathmandu's bus park (Macha Pokhari), via Dhading Besi and Arughat",
+      "Private jeep: 7-10 hours, more flexible and comfortable"
+    ],
+    "return_point": "Dharapani or Tiliche, jeep back to Kathmandu takes 8-10 hours via Besisahar"
+  },
+  "difficulty_level": "Moderate to difficult",
+  "difficulty_notes": "Requires good physical fitness and proper acclimatization. Highest point is Larkya La Pass (5,106m). Most trekking days involve 6-8 hours of walking on steep, rocky, sometimes exposed terrain. No technical climbing skills needed. Solo trekking is not permitted (minimum 2 trekkers plus licensed guide required by law).",
+  "time_required": "12-18 days depending on itinerary; 14 days is the most common standard length including acclimatization days",
+  "trail_length_km": "approx 177 km total circuit",
+  "max_altitude_m": 5106,
+  "permits_required": [
+    "Manaslu Restricted Area Permit (RAP) - required between Jagat and Dharapani",
+    "Manaslu Conservation Area Permit (MCAP)",
+    "Annapurna Conservation Area Permit (ACAP) - required for the final section near Dharapani"
+  ],
+  "permit_notes": "Must be arranged through a government-registered trekking agency; individual/independent application is not allowed. A licensed guide is mandatory. As of March 2026, the historical 2-trekker minimum group requirement was reportedly relaxed by Nepal's Department of Immigration, though a licensed guide remains mandatory - this rule area is still evolving and should be double-checked against current government sources before travel.",
+  "estimated_cost_usd": "700-1100+ for a 12-14 day guided package (varies by agency, inclusions, season)",
+  "culture_notes": "Trail passes through Gurung and Tibetan-influenced villages, with Buddhist monasteries and mani walls, especially in the upper Nubri and Tsum areas. Community-based teahouse lodging is available along most of the route.",
+  "source_urls": [
+    "https://www.visithimalayastrek.com/blog/manaslu-circuit-trek-permits",
+    "https://himalayanhero.com/manaslu/blog/manaslu-circuit-trek-itinerary-best-route-and-duration/",
+    "https://himalayanhero.com/manaslu/package/manaslu-circuit-trek/",
+    "https://www.nestadventure.com/blog/manaslu-circuit-trek-transportation/",
+    "https://www.himalayanst.com/blog/manaslu-circuit-trek-permits"
+  ],
+  "data_confidence_notes": "Permit rule details (group-size minimum) vary across sources and appear to be changing as of 2026 - flagged as a live example of conflicting/outdated source data for eval purposes."
+}

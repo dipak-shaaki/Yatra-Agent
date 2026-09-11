@@ -1,0 +1,38 @@
+{
+  "id": "mardi_himal",
+  "name": "Mardi Himal",
+  "province": "Gandaki",
+  "district": "Kaski",
+  "type": "trek",
+  "summary": "A short, quieter trek in the Annapurna region, east of the main ABC trail, ending near Mardi Himal Base Camp/Viewpoint beneath Machhapuchhre (Fishtail). Only opened for teahouse trekking in 2012, it offers close-up Himalayan views with fewer crowds than ABC or Everest Base Camp, making it a popular beginner-friendly short trek.",
+  "best_time_to_visit": {
+    "primary": "March to May (spring) and September to November/December (autumn)",
+    "notes": "Spring brings blooming rhododendron forests. Autumn/post-monsoon offers the most stable, clear weather and is the main tourist season."
+  },
+  "route_from_kathmandu": {
+    "trailhead": "Kande or Dhampus, reached via Pokhara",
+    "transport_options": [
+      "Kathmandu to Pokhara: flight (~25 min) or drive (6-7 hours) via Prithvi Highway",
+      "Pokhara to Kande/Dhampus: short 1-1.5 hour drive"
+    ]
+  },
+  "difficulty_level": "Easy to moderate",
+  "difficulty_notes": "One of the more beginner-friendly treks in Nepal. 4-7 hours of walking per day depending on route. Involves stone-step ascents and some steep sections closer to High Camp. Suitable for first-time trekkers with basic fitness; no technical climbing skills required to reach High Camp/Viewpoint (going further to base camp involves rockier terrain). No compulsory guide, though recommended, especially in winter or for solo trekkers.",
+  "time_required": "4-7 days depending on route and pace; shorter options via Sidhing village or Landruk cut 1-2 days",
+  "max_altitude_m": 4500,
+  "high_camp_altitude_m": 3660,
+  "permits_required": [
+    "Annapurna Conservation Area Permit (ACAP)",
+    "TIMS card"
+  ],
+  "permit_notes": "ACAP is consistently required; some sources note TIMS enforcement can vary by route/checkpoint on Annapurna-area trails, so travelers should confirm current requirements with NTB or a trekking agency before departure.",
+  "estimated_cost_usd": "approx 420-490 for an all-inclusive guided 5-7 day package (varies by operator)",
+  "culture_notes": "Trail passes through Gurung villages including Dhampus; less commercially developed than the main Annapurna Base Camp trail.",
+  "source_urls": [
+    "https://www.nepalintrepidtreks.com/packages/mardi-himal-trek/",
+    "https://www.alpineramble.com/blog/mardi-himal-trek-guide-cost-itinerary-best-time-what-to-expect",
+    "https://ammoniteadventure.com/trip/mardi-himal-trek",
+    "https://www.bestheritagetour.com/blog/mardi-himal-trek-guide"
+  ],
+  "data_confidence_notes": "TIMS enforcement consistency on Annapurna routes is disputed across sources - flagged as another live example of source conflict for eval design."
+}

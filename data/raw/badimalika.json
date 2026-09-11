@@ -1,0 +1,36 @@
+{
+  "id": "badimalika",
+  "name": "Badimalika",
+  "province": "Sudurpashchim",
+  "district": "Bajura",
+  "type": "religious pilgrimage / trek",
+  "summary": "A major Hindu Shakti Peeth (sacred site) dedicated to Goddess Bhagwati, located at 4,200m in Bajura district, far-western Nepal. Believed to be where the left shoulder of Goddess Sati fell, according to Hindu mythology. The pagoda-style temple sits atop a ridge surrounded by 22 rolling alpine meadows (patans), with views of Mt. Api and Mt. Saipal. One of Nepal's most remote and least-explored pilgrimage destinations.",
+  "best_time_to_visit": {
+    "primary": "March to May (spring) and September to November (autumn)",
+    "notes": "Spring brings steady weather and blooming rhododendrons/wildflowers. Autumn offers the clearest mountain views. Janai Purnima (full moon of Shrawan, around August) is the major pilgrimage festival, drawing thousands of visitors despite difficult monsoon trekking conditions. Winter brings heavy snowfall making high areas inaccessible."
+  },
+  "route_from_kathmandu": {
+    "trailhead": "Martadi (Bajura district headquarters)",
+    "transport_options": [
+      "Flight from Kathmandu to Dhangadhi or Nepalgunj, then road/jeep to Martadi (approx 10-12 hours)",
+      "Alternative: flight to Dhangadhi/Nepalgunj to Sanfebagar (Achham), then bus to Bajura"
+    ],
+    "trek_from_martadi": "2-4 days on foot to reach the temple, passing Budha Krodh and Triveni Dham (sacred river confluence at 3,870m)"
+  },
+  "difficulty_level": "Moderate to strenuous",
+  "difficulty_notes": "Remote high-altitude trek with limited lodges/facilities - travelers need to carry supplies. A licensed guide is mandatory under NTB regulations as of 2026.",
+  "time_required": "10-12 days total from Kathmandu including travel; 2-4 days trekking from Martadi alone",
+  "max_altitude_m": 4219,
+  "permits_required": [
+    "Khaptad National Park permit (approx USD 15) - relevant on some route variants",
+    "Bajura local area permit (approx USD 15)"
+  ],
+  "estimated_cost_usd": "1000-2500 per person depending on group size and services",
+  "culture_notes": "Offers insight into Khas culture and the traditional lifestyle of the Bajura and Doti districts. Pilgrims traditionally bathe at Triveni Dham before ascending, believed to wash away sins.",
+  "source_urls": [
+    "https://www.nepalholiday.com/badimalika-trek",
+    "https://www.buddhaair.com/blog/complete-guide-to-badimalika-trek",
+    "https://accessnepaltour.com/badimalika",
+    "https://www.bestheritagetour.com/blog/badimalika-trek-guide"
+  ]
+}

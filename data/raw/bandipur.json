@@ -1,0 +1,37 @@
+{
+  "id": "bandipur",
+  "name": "Bandipur",
+  "province": "Gandaki",
+  "district": "Tanahun",
+  "type": "hill town / heritage village",
+  "summary": "A well-preserved Newari hilltop settlement between Kathmandu and Pokhara, sitting on a ridge above the Marsyangdi River valley. Known for intricately carved traditional architecture, cobblestone streets, and Himalayan views on clear days. Protected as a living heritage site. A convenient and increasingly popular stop for travelers moving between Kathmandu and Pokhara.",
+  "best_time_to_visit": {
+    "primary": "March to May (spring) and September to November (autumn)",
+    "notes": "Spring brings warm weather, rhododendron blooms, and lush green hiking trails. Autumn offers crisp air, sharp Himalayan views, golden rice-harvest terraces, and coincides with Dashain and Tihar festivals. Monsoon (June-August) brings heavy rain, humidity, and obscured views."
+  },
+  "route_from_kathmandu": {
+    "transport_options": [
+      "Bus from Kathmandu to Dumre (5-6 hours) via Prithvi Highway, then local bus/jeep 8km uphill to Bandipur",
+      "Bus from Pokhara to Dumre (3-4 hours), then local transport to Bandipur",
+      "Private car/taxi directly from Kathmandu or Pokhara"
+    ]
+  },
+  "difficulty_level": "Easy (walkable town, optional moderate day-hikes nearby)",
+  "difficulty_notes": "The town itself requires no trekking. Nearby optional hikes include Ramkot village (6km, ~1.5 hours one-way, easy) and Siddha Gufa cave (recommended with a guide, some sections require climbing with rope assistance).",
+  "time_required": "1-2 days recommended",
+  "things_to_do": [
+    "Explore Newari architecture and cobblestone streets",
+    "Hike to Thani Mai temple for sunrise/sunset views",
+    "Day hike to Ramkot village",
+    "Visit Siddha Gufa cave (one of Nepal's largest caves)",
+    "Try Newari cuisine (samay baji, bara, choila) at local restaurants"
+  ],
+  "practical_notes": "No ATMs in Bandipur - bring cash from Kathmandu, Pokhara, or Dumre. Nearest medical facilities are in Dumre.",
+  "culture_notes": "One of the few Newari towns outside Kathmandu Valley, founded in the 18th century by Newari merchants as a trade hub; wealthy merchant homes and temples reflect this history.",
+  "source_urls": [
+    "https://www.backpackadventures.org/things-to-do-in-bandipur-nepal/",
+    "https://www.nepalhiking.com/bandipur-village-nepal/",
+    "https://himalayan-masters.com/bandipur-nepal/",
+    "https://travellingmandala.com/things-to-do-in-bandipur/"
+  ]
+}

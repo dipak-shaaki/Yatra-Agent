@@ -1,7 +1,7 @@
 """
 In-memory BM25 sparse index over the corpus chunks.
 
-Unlike Chroma, BM25 has no natural persistence/upsert API — rebuilding it
+Unlike Chroma, BM25 has no natural persistence/upsert API,rebuilding it
 from the full chunk set is cheap (just tokenization, no embedding calls),
 so we rebuild in memory on load rather than persisting to disk.
 """

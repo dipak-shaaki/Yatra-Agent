@@ -3,7 +3,8 @@ Wraps the self-hosted embedding model (bge-base-en-v1.5) so the rest of the
 app never touches sentence-transformers directly.
 """
 from functools import lru_cache
-
+import os
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from sentence_transformers import SentenceTransformer
 
 from app.core.config import get_settings

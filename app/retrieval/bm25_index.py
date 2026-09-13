@@ -14,10 +14,14 @@ from app.data_ingestion.chunker import chunk_corpus_dir
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+COMMA_IN_NUMBER_RE = re.compile(r"(?<=\d),(?=\d)")
+
+
 
 def _tokenize(text: str) -> list[str]:
-    """Simple lowercase alphanumeric tokenizer — good enough for this corpus size."""
-    return TOKEN_RE.findall(text.lower())
+    """Lowercase alphanumeric tokenizer, with comma-in-number normalization."""
+    text = COMMA_IN_NUMBER_RE.sub("", text.lower())
+    return TOKEN_RE.findall(text)
 
 
 class BM25Index:

@@ -20,21 +20,67 @@ function App() {
     if (!query || busy) return
     setInput('')
     setMessages((m) => [...m, { role: 'user', content: query }])
+    setMessages((m) => [...m, { role: 'assistant', content: '' }])
     setBusy(true)
+
+    const msgIndex = messages.length + 1
+
+    const append = (delta: string) =>
+      setMessages((m) => {
+        const next = [...m]
+        next[msgIndex] = { role: 'assistant', content: next[msgIndex].content + delta }
+        return next
+      })
+
+    // Yield to the browser's paint loop between events so each chunk
+    // visibly renders instead of collapsing into one batched update.
+    const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
+
     try {
-      const res = await fetch('/api/v1/chat', {
+      const res = await fetch('/api/v1/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, sender }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
-      setMessages((m) => [...m, { role: 'assistant', content: data.answer }])
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || `HTTP ${res.status}`)
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let done = false
+
+      while (!done) {
+        const { done: readDone, value } = await reader.read()
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: true })
+        done = readDone
+
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? ''
+
+        for (const raw of events) {
+          const line = raw.split('\n').find((l) => l.startsWith('data: '))
+          if (!line) continue
+          const payload = line.slice(6)
+          if (payload === '[DONE]') {
+            done = true
+            break
+          }
+          try {
+            const { chunk } = JSON.parse(payload)
+            if (chunk) {
+              append(chunk)
+              await nextFrame()
+            }
+          } catch {
+            /* ignore malformed events */
+          }
+        }
+      }
     } catch (err) {
-      setMessages((m) => [
-        ...m,
-        { role: 'assistant', content: `Error: ${(err as Error).message}` },
-      ])
+      append(`Error: ${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
@@ -72,11 +118,6 @@ function App() {
             </div>
           </div>
         ))}
-        {busy && (
-          <div className="row assistant">
-            <div className="bubble typing">…</div>
-          </div>
-        )}
         <div ref={bottomRef} />
       </main>
 

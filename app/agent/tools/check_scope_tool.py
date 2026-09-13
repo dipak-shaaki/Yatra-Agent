@@ -25,10 +25,15 @@ exactly 10 destinations: Manaslu Circuit, Annapurna Base Camp, Mardi Himal, Kori
 Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa.
 
 In scope: questions about these destinations' routes, permits, budgets, difficulty, best time to \
-visit, culture, or general Nepal trekking/travel planning relevant to them.
+visit, culture, or general Nepal trekking/travel planning relevant to them. This includes discovery \
+questions that mention a NEARBY city or landmark only as a reference point for filtering or \
+location context (e.g. "easy treks near Pokhara", "destinations close to Kathmandu") — these ARE \
+in scope, since the answer should draw from the 10 covered destinations, even though the reference \
+city itself isn't one of them.
 
 Out of scope: live weather/currency data, actual bookings/reservations, medical/emergency advice, \
-or anything unrelated to Nepal tourism.
+or questions specifically ABOUT a place that is not one of the 10 destinations (e.g. "tell me about \
+Pokhara city itself", "what's the best hotel in Kathmandu").
 
 Respond with ONLY a JSON object: {"in_scope": true or false, "reason": "brief reason"}
 

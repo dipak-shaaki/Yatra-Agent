@@ -1,10 +1,15 @@
 """
 Debug endpoints for testing individual agent tools directly (bypassing the
-orchestrator), plus the real /chat and /chat/stream endpoints.
+orchestrator), plus the real document-management and chat endpoints.
+
+/chat takes a JSON body ({"query": ..., "sender": ...}) and streams its
+reply when called with ?stream=true, or returns plain JSON otherwise —
+one endpoint, one request shape, toggled by a query param.
 """
 import json
+from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -36,16 +41,20 @@ async def debug_search(request: QueryRequest):
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest):
-    answer = await handle_turn(request.query, sender=request.sender)
-    return {"answer": answer}
+async def chat(
+    request: ChatRequest,
+    stream: bool = Query(False, description="If true, streams the answer as SSE chunks instead of returning plain JSON."),
+):
+    """Send a message to Yatra. Pass ?stream=true to get the answer as a
+    Server-Sent Events stream of text chunks instead of a single JSON body."""
+    if stream:
+        return StreamingResponse(_event_stream(request.query, request.sender), media_type="text/event-stream")
+
+    result = await handle_turn(request.query, sender=request.sender)
+    return {"answer": result["answer"], "retrieved_context": result["retrieved_context"]}
 
 
-@router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
-    async def event_generator():
-        async for chunk in handle_turn_stream(request.query, sender=request.sender):
-            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+async def _event_stream(query: str, sender: str) -> AsyncGenerator[str, None]:
+    async for chunk in handle_turn_stream(query, sender=sender):
+        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+    yield "data: [DONE]\n\n"

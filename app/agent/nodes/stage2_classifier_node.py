@@ -13,19 +13,20 @@ from app.utils.logger import log_event
 
 STAGE2_PROMPT = """Classify the user's LATEST message as exactly one of: "new_question", "filler", "unclear".
 
-- new_question: contains a real question or request needing information, INCLUDING a short reply \
-that directly answers or follows up on something the assistant just asked (e.g. assistant asked \
-"want to compare?" and user says "yes" or "I wanna compare")
-- filler: pure acknowledgment/greeting/farewell with no real content, and NOT a response to a \
-question the assistant just asked
-- unclear: genuinely ambiguous even accounting for the conversation context
+- new_question: contains a real question or request needing information, OR is a genuine engaged \
+response to something the assistant just asked — including short answers ("yes", "okay", "I wanna \
+compare") that continue the conversation, AND expressions of uncertainty ("I'm not sure", "no idea").
+
+- filler: pure acknowledgment/greeting/farewell with no real content, and NOT a response to \
+something the assistant just asked (e.g. "ok", "thanks", "bye" with nothing else)
+- unclear: genuinely nonsensical, garbled, or impossible to interpret even accounting for context \
+(e.g. random characters, completely off-topic gibberish)
 
 Respond with ONLY a JSON object: {"category": "new_question" or "filler" or "unclear"}
 
 Assistant's last message (for context, may be empty if this is the first message): {last_assistant_message}
 
 User's latest message: {message}"""
-
 
 def classify_stage2(message: str, last_assistant_message: str = "") -> str:
     client = get_groq_client()

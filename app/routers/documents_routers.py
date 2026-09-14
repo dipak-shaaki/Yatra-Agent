@@ -14,7 +14,8 @@ router = APIRouter()
 @router.post("/documents/upsert")
 async def upsert_document_endpoint(request: DocumentUpsertRequest):
     try:
-        result = upsert_document(request.filename, request.content)
-        return result
+        return upsert_document(request.filename, request.content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upsert document: {e}")

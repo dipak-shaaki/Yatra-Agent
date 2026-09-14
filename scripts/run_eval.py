@@ -43,29 +43,19 @@ def load_cases() -> list[dict]:
 
 
 def run_case(case: dict) -> dict:
-    """Run a single evaluation case against the running API."""
     sender = f"eval_{case['id']}"
     start = time.perf_counter()
-
     try:
-        response = httpx.post(
-            API_URL,
-            json={
-                "query": case["question"],
-                "sender": sender,
-            },
-            timeout=HTTP_TIMEOUT,
-        )
-
+        response = httpx.post(API_URL, json={"query": case["question"], "sender": sender}, timeout=45)
         response.raise_for_status()
-
-        answer = response.json()["answer"]
+        response_json = response.json()
+        answer = response_json["answer"]
+        retrieved_context = response_json.get("retrieved_context", [])
         error = None
-
     except Exception as e:
         answer = None
+        retrieved_context = []
         error = str(e)
-
     elapsed_s = round(time.perf_counter() - start, 2)
 
     return {
@@ -75,10 +65,10 @@ def run_case(case: dict) -> dict:
         "question": case["question"],
         "expected_answer": case["expected_answer"],
         "actual_answer": answer,
+        "retrieved_context": retrieved_context,
         "error": error,
         "time_secs": elapsed_s,
     }
-
 
 def main():
     """Run all evaluation cases and save results."""

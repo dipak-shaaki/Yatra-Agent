@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.routers.chat_router import router as chat_router
-from app.routers.chat_router import router as chat_router
 from app.retrieval.embeddings import get_embedding_model
 from app.db.chroma.client import get_collection
 from app.routers.documents_routers import router as documents_router

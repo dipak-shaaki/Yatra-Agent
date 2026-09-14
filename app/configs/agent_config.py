@@ -20,3 +20,6 @@ SESSION_TTL_SECONDS = 60 * 60 * 2  # 2 hours of inactivity before a session expi
 
 # Turn Handler
 FILLER_LOOP_THRESHOLD = 3
+
+TOOL_SELECTION_MAX_TOKENS = 200
+FINAL_ANSWER_MAX_TOKENS = 400

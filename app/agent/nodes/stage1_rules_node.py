@@ -11,8 +11,8 @@ another file — it should only ever live here.
 import random
 import re
 
-GREETING_PATTERNS = [r"^hi+$", r"^hello+$", r"^hey+$", r"^namaste$", r"^good (morning|afternoon|evening)$"]
-ACKNOWLEDGMENT_PATTERNS = [r"^(ok(ay)?|kk?|yes|yeah|yep|sure|alright|got it|cool|nice|great|thanks?( you)?|thank you)$"]
+GREETING_PATTERNS = [r"^hi+$", r"^hello+$", r"^hey+$", r"^namaste$", r"^good (morning|afternoon|evening)$", r"^yo+$", r"^h(ey|i|ello)\s+(bro|there|friend|man)$"]
+ACKNOWLEDGMENT_PATTERNS = [r"^(kk?|sure|alright|got it|cool|nice|great|thanks?( you)?|thank you)$"]
 FAREWELL_PATTERNS = [r"^(bye|goodbye|see you|take care)$"]
 
 ALL_PATTERNS = GREETING_PATTERNS + ACKNOWLEDGMENT_PATTERNS + FAREWELL_PATTERNS

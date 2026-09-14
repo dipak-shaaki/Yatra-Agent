@@ -37,11 +37,10 @@ function App() {
     const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
 
     try {
-      const res = await fetch('/api/v1/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, sender }),
-      })
+      const res = await fetch(
+        `/api/v1/chat?stream=true&query=${encodeURIComponent(query)}&sender=${encodeURIComponent(sender)}`,
+        { method: 'POST' },
+      )
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || `HTTP ${res.status}`)

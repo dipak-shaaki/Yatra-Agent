@@ -25,6 +25,15 @@ def get_collection():
         metadata={"hnsw:space": "cosine"},
     )
 
+def delete_chunks_by_source_file(source_file: str) -> int:
+    """Deletes all chunks belonging to one source file (e.g. 'bandipur.md'),
+    used before re-upserting a destination so removed/renamed sections don't
+    leave stale, orphaned chunks behind."""
+    collection = get_collection()
+    existing = collection.get(where={"source_file": {"$eq": source_file}})
+    if existing["ids"]:
+        collection.delete(ids=existing["ids"])
+    return len(existing["ids"])
 
 def upsert_chunks(
     ids: list[str],

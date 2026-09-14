@@ -1,17 +1,19 @@
 """
-Runs the faithfulness judge against eval/results.jsonl — re-retrieves
-context per question (cheap, no LLM call) and judges the already-captured
-answer against it (one LLM call per case).
+Runs the faithfulness judge against eval/results.jsonl, using the
+retrieved_context each case actually captured during its real run —
+not a separate re-retrieval, which previously caused inconsistent
+verdicts on the same underlying facts.
 """
 import json
 import time
 from pathlib import Path
 
-from app.retrieval.hybrid_retriever import hybrid_search
 from eval.faithfulness_judge import judge_faithfulness
 
 RESULTS_PATH = Path("eval/results.jsonl")
 FAITHFULNESS_RESULTS_PATH = Path("eval/faithfulness_results.jsonl")
+
+SKIP_CATEGORIES = {"out_of_scope", "adversarial"}
 
 
 def main():
@@ -23,11 +25,6 @@ def main():
 
     print(f"Judging faithfulness for {len(results)} cases...\n")
 
-    # Faithfulness only makes sense for cases where the answer is supposed to
-    # draw on retrieved facts — refusals (out_of_scope, adversarial) don't
-    # have a meaningful "correct context" to be judged against.
-    SKIP_CATEGORIES = {"out_of_scope", "adversarial"}
-
     judged = []
     for r in results:
         if r.get("error") or not r.get("actual_answer"):
@@ -37,9 +34,12 @@ def main():
             print(f"[{r['id']}] skipped — {r['category']} is a refusal case, not fact-grounded")
             continue
 
-        retrieved = hybrid_search(r["question"], n_results=5)
-        context = "\n\n".join(chunk["text"] for chunk in retrieved)
+        context_chunks = r.get("retrieved_context", [])
+        if not context_chunks:
+            print(f"[{r['id']}] skipped — no retrieved_context captured (Turn Handler short-circuit or empty retrieval)")
+            continue
 
+        context = "\n\n".join(context_chunks)
         verdict = judge_faithfulness(context, r["actual_answer"])
         judged.append({**r, "faithfulness": verdict})
 

@@ -479,13 +479,7 @@ Response          Faithfulness Judge
 
 This will make faithfulness evaluation substantially more meaningful.
 
-2. **SSE Streaming** — Add Server-Sent Events (SSE) streaming to the `/chat` endpoint:
-
-```
-User → FastAPI → Agent → Streaming response → Client receives tokens incrementally
-```
-
-This will improve perceived response latency.
+2. **SSE Streaming** — *Done.* `/chat` prints its reply as a Server-Sent Events stream when called with `?stream=true` (selectable in Swagger), and returns plain JSON otherwise.
 
 3. **Incremental Document Ingestion** — Add a document ingestion/update endpoint that can update one destination document, re-chunk it, re-generate embeddings, update Chroma and BM25 indexes, and avoid rebuilding the entire corpus. For example, `PUT /destinations/{destination_id}` would update only the affected destination.
 
@@ -580,7 +574,70 @@ uv run python scripts/build_index.py
 uv run uvicorn app.main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`, with the `/health` health check and `/api/v1/chat` chat endpoint.
+The API will be available at `http://localhost:8000`, with the `/health` health check. Interactive, Swagger-style API docs (with input boxes and a `stream` true/false selector) are at `http://localhost:8000/docs`.
+
+### API Endpoints
+
+All endpoints live under the `/api/v1` prefix except the health check. Every
+endpoint accepts a JSON body and is fully interactive in Swagger UI at
+`/docs` — request fields render as input boxes with examples, and boolean
+parameters (like `stream`) render as a true/false selector.
+
+Interactive docs: **`http://localhost:8000/docs`**
+ReDoc: **`http://localhost:8000/redoc`**
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness check. Returns `{"status": "ok", "app": "<name>"}`. |
+| `POST` | `/api/v1/chat` | Send a message to Yatra. Controlled by the `stream` query parameter (below). |
+| `POST` | `/api/v1/documents/upsert` | Upsert a destination document into the corpus (re-chunks + re-indexes). |
+| `POST` | `/api/v1/debug/check-scope` | Debug: test the scope classifier on a raw query. |
+| `POST` | `/api/v1/debug/search` | Debug: test destination search directly, bypassing the agent loop. |
+
+#### `POST /api/v1/chat`
+
+All arguments are query parameters, so Swagger UI renders one labeled input
+box per field and a true/false `stream` selector. Uses `POST` for semantic
+consistency (even though the body is empty).
+
+```http
+POST /api/v1/chat?query=...&sender=...&stream=false
+```
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `query` | `string` | `required` — The user's message to Yatra. |
+| `sender` | `string` | `required` — Conversation/session identifier used for Redis memory. |
+| `stream` | `boolean` | `false` (default): returns the full answer as `{"answer": "..."}`. `true`: returns a Server-Sent Events (SSE) stream of text chunks ending with `data: [DONE]`. |
+
+Example — non-streaming reply:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  --get --data-urlencode "query=What is the best time for Annapurna Base Camp?" \
+  --data-urlencode "sender=test_user"
+```
+
+```json
+{
+  "answer": "The best time to visit Annapurna Base Camp is ..."
+}
+```
+
+Example — streaming reply:
+
+```bash
+curl -N -X POST "http://localhost:8000/api/v1/chat?stream=true" \
+  --get --data-urlencode "query=What is the best time for Annapurna Base Camp?" \
+  --data-urlencode "sender=test_user"
+```
+
+```text
+data: {"chunk": "The best "}
+data: {"chunk": "time to visit "}
+...
+data: [DONE]
+```
 
 ### Running the UI (optional)
 
@@ -615,7 +672,7 @@ uv run python scripts/eval_faithfulness.py   # LLM faithfulness judge
 | Retrieval evaluation | ✅ |
 | Functional evaluation | ✅ |
 | LLM faithfulness evaluation | ⚠️ Needs improved context capture |
-| SSE streaming | 🔲 Planned |
+| SSE streaming | ✅ Single `/chat` endpoint, `?stream=true/false` |
 | Incremental ingestion | 🔲 Planned |
 | Expanded evaluation set | 🔲 Planned |
 | Nepali language support | 🔲 Planned |

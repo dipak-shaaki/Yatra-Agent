@@ -26,7 +26,10 @@ def _get_last_assistant_message(sender: str) -> str:
             return msg["content"]
     return ""
 
-async def handle_turn(query: str, sender: str) -> str:
+async def handle_turn(query: str, sender: str) -> dict:
+    """Returns {"answer": str, "retrieved_context": list[str]}. Turn Handler
+    short-circuit paths (stage1/stage2 filler/unclear) return empty context,
+    since no retrieval happened for those."""
     stage1_category = classify_stage1(query)
 
     if stage1_category:
@@ -36,7 +39,7 @@ async def handle_turn(query: str, sender: str) -> str:
         reply = loop_break_msg or get_templated_reply(stage1_category)
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
-        return reply
+        return {"answer": reply, "retrieved_context": []}
 
     last_assistant_message = _get_last_assistant_message(sender)
     stage2_category = classify_stage2(query, last_assistant_message=last_assistant_message)
@@ -48,21 +51,21 @@ async def handle_turn(query: str, sender: str) -> str:
         reply = loop_break_msg or get_templated_reply("acknowledgment")
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
-        return reply
+        return {"answer": reply, "retrieved_context": []}
 
     if stage2_category == "unclear":
         log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
         reply = "I didn't quite catch that — could you rephrase your question about Nepal travel?"
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
-        return reply
+        return {"answer": reply, "retrieved_context": []}
 
     reset_filler_count(sender)
     log_event("turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent")
-    answer = await run_agent(query, sender=sender)
+    result = await run_agent(query, sender=sender)
     append_message(sender, "user", query)
-    append_message(sender, "assistant", answer)
-    return answer
+    append_message(sender, "assistant", result["answer"])
+    return result
 
 async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str, None]:
     stage1_category = classify_stage1(query)
@@ -92,7 +95,12 @@ async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str, Non
 
     if stage2_category == "unclear":
         log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
-        reply = "I didn't quite catch that — could you rephrase your question about Nepal travel?"
+        reply = (
+            "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
+            "best time to visit for 10 Nepal destinations — Manaslu Circuit, Annapurna Base Camp, "
+            "Mardi Himal, Kori, Badimalika, Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa. "
+            "What would you like to know?"
+        )
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
         yield reply

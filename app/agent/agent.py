@@ -13,12 +13,17 @@ via its `stream=true|false` query parameter.
 """
 import json
 import time
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from app.agent.tool_registry import call_tool, get_tool_schemas
 from app.components.groq.client import get_groq_client
 from app.components.redis.session_store import get_history
-from app.configs.agent_config import AGENT_MODEL, MAX_TOOL_ITERATIONS, CONVERSATION_HISTORY_LIMIT , FINAL_ANSWER_MAX_TOKENS
+from app.configs.agent_config import (
+    AGENT_MODEL,
+    CONVERSATION_HISTORY_LIMIT,
+    FINAL_ANSWER_MAX_TOKENS,
+    MAX_TOOL_ITERATIONS,
+)
 from app.utils.logger import log_event
 
 SYSTEM_PROMPT = """You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
@@ -124,7 +129,7 @@ async def run_agent(user_query: str, sender: str) -> dict:
     log_event("agent_max_iterations_hit", max_iterations=MAX_TOOL_ITERATIONS, total_time_secs=total_s)
     return {"answer": "Sorry, I'm having trouble processing that request right now. Could you rephrase it?", "retrieved_context": retrieved_context}
 
-async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str, None]:
+async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str]:
     """
     Yields text chunks as they're generated. Tool-call rounds happen
     silently between yields — only final-answer generation actually

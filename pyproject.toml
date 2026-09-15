@@ -38,8 +38,11 @@ dev = [
 ]
 
 [tool.uv]
-package = true
+package = false
 
 [tool.uv.build-backend]
 module-name = "app"
 module-root = "."
+
+[tool.ruff.lint]
+ignore = ["BLE001"]

@@ -12,7 +12,7 @@ Design notes:
 import json
 
 from app.components.redis.client import get_redis_client
-from app.configs.agent_config import SESSION_TTL_SECONDS, MAX_STORED_HISTORY_MESSAGES
+from app.configs.agent_config import MAX_STORED_HISTORY_MESSAGES, SESSION_TTL_SECONDS
 
 
 def _messages_key(sender: str) -> str:

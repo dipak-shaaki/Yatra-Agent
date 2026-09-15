@@ -8,6 +8,7 @@ from typing import Any
 import chromadb
 
 from app.core.config import get_settings
+from app.utils.logger import log_event
 
 COLLECTION_NAME = "yatra_destinations"
 
@@ -63,5 +64,5 @@ def reset_collection() -> None:
     client = get_chroma_client()
     try:
         client.delete_collection(COLLECTION_NAME)
-    except Exception:
-        pass
+    except Exception as e:
+        log_event("chroma_reset_collection_not_found", detail=str(e))

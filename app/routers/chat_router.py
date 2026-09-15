@@ -7,7 +7,7 @@ one labeled input box per field plus a true/false `stream` selector) and
 streams its reply when stream=true, or returns plain JSON otherwise.
 """
 import json
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
@@ -65,7 +65,7 @@ async def chat(
     return {"answer": result["answer"], "retrieved_context": result["retrieved_context"]}
 
 
-async def _event_stream(query: str, sender: str) -> AsyncGenerator[str, None]:
+async def _event_stream(query: str, sender: str) -> AsyncGenerator[str]:
     async for chunk in handle_turn_stream(query, sender=sender):
         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
     yield "data: [DONE]\n\n"

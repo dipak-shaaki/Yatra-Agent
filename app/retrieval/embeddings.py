@@ -2,8 +2,9 @@
 Wraps the self-hosted embedding model (bge-base-en-v1.5) so the rest of the
 app never touches sentence-transformers directly.
 """
-from functools import lru_cache
 import os
+from functools import lru_cache
+
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from sentence_transformers import SentenceTransformer
 

@@ -3,7 +3,7 @@ Loop-breaker — if a session hits N consecutive filler turns, proactively
 break the pattern instead of silently continuing to short-circuit forever.
 """
 from app.components.redis.client import get_redis_client
-from app.configs.agent_config import AGENT_MODEL, FILLER_LOOP_THRESHOLD
+from app.configs.agent_config import FILLER_LOOP_THRESHOLD
 
 LOOP_BREAK_MESSAGE = "Just checking — is there something specific about Nepal travel I can help with, or are we good for now?"
 

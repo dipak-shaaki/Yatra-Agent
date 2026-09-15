@@ -51,8 +51,7 @@ def main():
         time.sleep(2)
 
     with open(FAITHFULNESS_RESULTS_PATH, "w") as f:
-        for j in judged:
-            f.write(json.dumps(j) + "\n")
+        f.writelines(json.dumps(j) + "\n" for j in judged)
 
     faithful_count = sum(1 for j in judged if j["faithfulness"]["faithful"] is True)
     print(f"\n{faithful_count}/{len(judged)} judged faithful")

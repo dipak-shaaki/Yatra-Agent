@@ -15,7 +15,6 @@ from pathlib import Path
 
 import httpx
 
-
 API_URL = "http://localhost:8000/api/v1/chat"
 EVAL_DIR = Path("eval/cases")
 RESULTS_PATH = Path("eval/results.jsonl")

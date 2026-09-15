@@ -10,13 +10,11 @@ no embedding calls) but worth being explicit about, not hidden.
 """
 from pathlib import Path
 
-from app.data_ingestion.chunker import chunk_document
-from app.db.chroma.client import upsert_chunks
+from app.data_ingestion.chunker import _parse_frontmatter, chunk_document
+from app.db.chroma.client import delete_chunks_by_source_file, upsert_chunks
 from app.retrieval.bm25_index import reset_bm25_index
 from app.retrieval.embeddings import embed_documents
 from app.utils.logger import log_event
-from app.data_ingestion.chunker import chunk_document, _parse_frontmatter
-from app.db.chroma.client import upsert_chunks, delete_chunks_by_source_file
 
 CORPUS_DIR = Path("data/corpus")
 

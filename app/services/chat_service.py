@@ -7,13 +7,17 @@ handle_turn_stream() is the streaming version (yields chunks) — Turn
 Handler's instant replies are yielded as a single chunk; only real agent
 turns stream incrementally.
 """
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from app.agent.agent import run_agent, run_agent_stream
+from app.agent.nodes.loop_breaker_node import (
+    check_loop_break,
+    increment_filler_count,
+    reset_filler_count,
+)
 from app.agent.nodes.stage1_rules_node import classify_stage1, get_templated_reply
 from app.agent.nodes.stage2_classifier_node import classify_stage2
-from app.agent.nodes.loop_breaker_node import increment_filler_count, reset_filler_count, check_loop_break
-from app.components.redis.session_store import append_message ,get_history
+from app.components.redis.session_store import append_message, get_history
 from app.utils.logger import log_event
 
 
@@ -67,7 +71,7 @@ async def handle_turn(query: str, sender: str) -> dict:
     append_message(sender, "assistant", result["answer"])
     return result
 
-async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str, None]:
+async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str]:
     stage1_category = classify_stage1(query)
 
     if stage1_category:

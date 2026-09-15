@@ -1,9 +1,8 @@
 """Groq API client setup — connection only, no business/prompt logic here."""
 from functools import lru_cache
 
-from groq import Groq
-
 from app.core.config import get_settings
+from groq import Groq
 
 
 @lru_cache

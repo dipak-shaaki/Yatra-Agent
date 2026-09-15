@@ -74,8 +74,7 @@ def main():
         print()
 
     with open(RESULTS_PATH, "w") as f:
-        for r in results:
-            f.write(json.dumps(r) + "\n")
+        f.writelines(json.dumps(r) + "\n" for r in results)
 
     print(f"Saved {len(results)} results to {RESULTS_PATH}")
 

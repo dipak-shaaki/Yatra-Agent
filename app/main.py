@@ -1,7 +1,10 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.components.redis.client import get_redis_client
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.db.chroma.client import get_collection
@@ -9,10 +12,11 @@ from app.retrieval.embeddings import get_embedding_model
 from app.routers.chat_router import router as chat_router
 from app.routers.documents_routers import router as documents_router
 
+_logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
     configure_logging()
     settings = get_settings()
     app.state.settings = settings
@@ -21,12 +25,20 @@ async def lifespan(app: FastAPI):
     # user request doesn't pay cold-load latency.
     get_embedding_model()
     get_collection()
-    # TODO: init redis client , once we want an explicit connection check
+
+    # Warn-only Redis check — the app is happy to start; session memory
+    # will return empty history until Redis becomes reachable.
+    try:
+        await asyncio.to_thread(get_redis_client().ping)
+    except Exception as e:
+        _logger.warning("Redis unavailable at startup (%s) — session memory disabled", e)
 
     yield
 
-    # shutdown
-    # TODO: close redis connection, persist chroma if needed
+    try:
+        get_redis_client().close()
+    except Exception as e:
+        _logger.warning("Redis close failed: %s", e)
 
 
 def create_app() -> FastAPI:

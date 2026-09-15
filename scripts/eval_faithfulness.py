@@ -2,8 +2,12 @@
 Runs the faithfulness judge against eval/results.jsonl, using the
 retrieved_context each case captured during its real run rather than a
 separate re-retrieval (which previously caused inconsistent verdicts).
+
+The judge is async (AsyncGroq), so the main driver wraps each call in an
+asyncio.run().
 """
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -44,7 +48,7 @@ def main():
             continue
 
         context = "\n\n".join(context_chunks)
-        verdict = judge_faithfulness(context, r["actual_answer"])
+        verdict = asyncio.run(judge_faithfulness(context, r["actual_answer"]))
         judged.append({**r, "faithfulness": verdict})
 
         print(f"[{r['id']}] faithful={verdict['faithful']}")

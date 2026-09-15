@@ -4,6 +4,12 @@ import './index.css'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
+const SUGGESTIONS = [
+  "What's the best time to visit Annapurna Base Camp?",
+  'Compare Mardi Himal and Bandipur',
+  'How much are Manaslu Circuit permits?',
+]
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -88,7 +94,13 @@ function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="title">Yatra</span>
+        <div className="brand">
+          <span className="logo">Y</span>
+          <span className="brand-text">
+            <span className="title">Yatra AI Agent</span>
+            <span className="tagline">Nepal domestic travel assistant</span>
+          </span>
+        </div>
         <label className="sender">
           sender
           <input
@@ -101,16 +113,36 @@ function App() {
 
       <main className="messages">
         {messages.length === 0 && (
-          <p className="hint">
-            Ask about the 10 destinations — e.g. "What's the best time for
-            Annapurna Base Camp?"
-          </p>
+          <div className="hint">
+            <div className="hint-title">Ask me about 10 Nepal destinations</div>
+            <div className="hint-sub">
+              Treks, permits, budgets, culture, and best time to visit — try one
+              of these:
+            </div>
+            <div className="chips">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} className="chip" onClick={() => setInput(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`row ${m.role}`}>
-            <div className="bubble">
+            <div className={`bubble${m.role === 'assistant' ? ' ai' : ''}`}>
               {m.role === 'assistant' ? (
-                <ReactMarkdown>{m.content}</ReactMarkdown>
+                m.content ? (
+                  <ReactMarkdown>{m.content}</ReactMarkdown>
+                ) : busy ? (
+                  <div className="typing">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : (
+                  ''
+                )
               ) : (
                 m.content
               )}

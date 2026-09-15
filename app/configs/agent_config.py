@@ -7,6 +7,22 @@ instead of hardcoding their own copies.
 # classification, tool loop, loop-break message generation).
 AGENT_MODEL = "openai/gpt-oss-20b"
 
+# In-scope destinations — single source of truth. Both the system prompt and
+# the shared UNCLEAR_REPLY are built from this, so adding a destination
+# updates every copy.
+DESTINATION_NAMES = (
+    "Manaslu Circuit",
+    "Annapurna Base Camp",
+    "Mardi Himal",
+    "Kori",
+    "Badimalika",
+    "Bandipur",
+    "Panauti",
+    "Gorkha",
+    "Rara Lake",
+    "Tansen/Palpa",
+)
+
 # Agent loop
 MAX_TOOL_ITERATIONS = 5
 

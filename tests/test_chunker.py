@@ -57,6 +57,30 @@ def test_each_section_becomes_a_chunk(tmp_path: Path) -> None:
     assert sections == ["Overview", "Route and Access", "Difficulty"]
 
 
+def test_horizontal_rule_in_body_is_not_a_frontmatter_marker(tmp_path: Path) -> None:
+    doc = """---
+name: Test Peak
+---
+# Test Peak
+
+Intro paragraph.
+---
+A section below a horizontal rule.
+
+## Later Section
+
+Still parsed.
+"""
+    file_path = tmp_path / "test_peak.md"
+    file_path.write_text(doc, encoding="utf-8")
+
+    chunks = chunk_document(file_path)
+
+    sections = [c["metadata"]["section_title"] for c in chunks]
+    assert "Later Section" in sections
+    assert sections[0] == "Overview"
+
+
 def test_document_without_frontmatter_raises(tmp_path: Path) -> None:
     file_path = tmp_path / "broken.md"
     file_path.write_text("# No frontmatter here", encoding="utf-8")

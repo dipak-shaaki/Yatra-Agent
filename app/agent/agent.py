@@ -4,32 +4,39 @@ execute any tool calls the model returns, feed the results back as tool
 messages, and repeat until the model answers with plain content.
 
 Two entry points: run_agent() (non-streaming) and run_agent_stream()
-(streaming). /chat selects between them via `stream=true|false`.
+(streaming). /chat selects between them via `stream=true|false`. Both are
+async: the Groq client is the AsyncGroq variant, and the sync retrieval /
+tool / Redis calls are pushed to a worker thread so they never block the
+event loop.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncGenerator
 
 from app.agent.tool_registry import call_tool, get_tool_schemas
-from app.components.groq.client import get_groq_client
+from app.components.groq.client import get_async_groq_client
 from app.components.redis.session_store import get_history
 from app.configs.agent_config import (
     AGENT_MODEL,
     CONVERSATION_HISTORY_LIMIT,
+    DESTINATION_NAMES,
     FINAL_ANSWER_MAX_TOKENS,
     MAX_TOOL_ITERATIONS,
 )
 from app.utils.logger import log_event
 
-SYSTEM_PROMPT = """You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
-exactly 10 destinations: Manaslu Circuit, Annapurna Base Camp, Mardi Himal, Kori, Badimalika, \
-Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa.
+_destinations = ", ".join(DESTINATION_NAMES)
+_destination_count = len(DESTINATION_NAMES)
+
+SYSTEM_PROMPT = f"""You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
+exactly {_destination_count} destinations: {_destinations}.
 
 Always call check_scope first on any real question to confirm it's within your domain. If in \
 scope, use search_destinations (or other tools) to retrieve real information before answering — \
 never answer from memory alone. If out of scope, politely explain you can only help with these \
-10 destinations.
+{_destination_count} destinations.
 
 Response style:
 - Be concise. Answer only what was asked.
@@ -43,6 +50,19 @@ difficulty, one permit) never needs a table.
 a direct yes/no or the conversation seems to be wrapping up."""
 
 
+def _capture_retrieved_context(
+    tool_name: str, result, retrieved_context: list[str]
+) -> None:
+    """Collect the text the retrieval-backed tools actually returned, so the
+    faithfulness judge can score against exactly what the agent saw."""
+    if tool_name == "search_destinations" and isinstance(result, list):
+        retrieved_context.extend(chunk.get("text", "") for chunk in result)
+    elif tool_name == "compare_destinations" and isinstance(result, dict):
+        for sections in result.values():
+            if isinstance(sections, dict):
+                retrieved_context.extend(sections.values())
+
+
 async def run_agent(user_query: str, sender: str) -> dict:
     """
     Returns {"answer": str, "retrieved_context": list[str]} — the context
@@ -52,15 +72,19 @@ async def run_agent(user_query: str, sender: str) -> dict:
     """
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(get_history(sender, limit=CONVERSATION_HISTORY_LIMIT))
+    messages.extend(
+        await asyncio.to_thread(
+            get_history, sender, limit=CONVERSATION_HISTORY_LIMIT
+        )
+    )
     messages.append({"role": "user", "content": user_query})
 
-    client = get_groq_client()
+    client = get_async_groq_client()
     retrieved_context: list[str] = []
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         llm_start = time.perf_counter()
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=AGENT_MODEL,
             messages=messages,
             tools=get_tool_schemas(),
@@ -113,18 +137,11 @@ async def run_agent(user_query: str, sender: str) -> dict:
                 args = json.loads(tc.function.arguments)
                 if tool_name == "get_conversation_context":
                     args["sender"] = sender
-                result = call_tool(tool_name, **args)
+                result = await asyncio.to_thread(call_tool, tool_name, **args)
                 elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
                 log_event("tool_called", tool=tool_name, args=args, time_secs=elapsed_s)
 
-                # Capture retrieved text for faithfulness judging, regardless
-                # of which retrieval-backed tool produced it.
-                if tool_name == "search_destinations" and isinstance(result, list):
-                    retrieved_context.extend(chunk.get("text", "") for chunk in result)
-                elif tool_name == "compare_destinations" and isinstance(result, dict):
-                    for sections in result.values():
-                        if isinstance(sections, dict):
-                            retrieved_context.extend(sections.values())
+                _capture_retrieved_context(tool_name, result, retrieved_context)
 
             except Exception as e:
                 elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
@@ -156,22 +173,35 @@ async def run_agent(user_query: str, sender: str) -> dict:
     }
 
 
-async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str]:
+async def run_agent_stream(
+    user_query: str,
+    sender: str,
+    retrieved_context: list[str] | None = None,
+) -> AsyncGenerator[str]:
     """Yield text chunks as they are generated.
 
     Tool-call rounds run silently between yields; only final-answer
-    generation streams text to the caller.
+    generation streams text to the caller. The retrieved chunks are written
+    into the caller-supplied `retrieved_context` list (async generators
+    cannot return values, so the caller owns that list and reads it after
+    the generator completes).
     """
+    if retrieved_context is None:
+        retrieved_context = []
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(get_history(sender, limit=CONVERSATION_HISTORY_LIMIT))
+    messages.extend(
+        await asyncio.to_thread(
+            get_history, sender, limit=CONVERSATION_HISTORY_LIMIT
+        )
+    )
     messages.append({"role": "user", "content": user_query})
 
-    client = get_groq_client()
+    client = get_async_groq_client()
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         llm_start = time.perf_counter()
-        stream = client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=AGENT_MODEL,
             messages=messages,
             tools=get_tool_schemas(),
@@ -182,7 +212,7 @@ async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str]:
         content_buffer = ""
         tool_calls_buffer: dict[int, dict] = {}
 
-        for chunk in stream:
+        async for chunk in stream:
             delta = chunk.choices[0].delta
 
             if delta.content:
@@ -234,11 +264,13 @@ async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str]:
                 args = json.loads(tc["arguments"])
                 if tc["name"] == "get_conversation_context":
                     args["sender"] = sender
-                result = call_tool(tc["name"], **args)
+                result = await asyncio.to_thread(call_tool, tc["name"], **args)
                 elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
                 log_event(
                     "tool_called", tool=tc["name"], args=args, time_secs=elapsed_s
                 )
+
+                _capture_retrieved_context(tc["name"], result, retrieved_context)
             except Exception as e:
                 elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
                 result = {"error": str(e)}

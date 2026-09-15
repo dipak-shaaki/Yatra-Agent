@@ -7,7 +7,7 @@ The assistant's last message is included as context so short follow-ups
 
 import json
 
-from app.components.groq.client import get_groq_client
+from app.components.groq.client import get_async_groq_client
 from app.configs.agent_config import AGENT_MODEL
 from app.utils.logger import log_event
 
@@ -29,10 +29,10 @@ Assistant's last message (for context, may be empty if this is the first message
 User's latest message: {message}"""
 
 
-def classify_stage2(message: str, last_assistant_message: str = "") -> str:
-    client = get_groq_client()
+async def classify_stage2(message: str, last_assistant_message: str = "") -> str:
+    client = get_async_groq_client()
     try:
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=AGENT_MODEL,
             messages=[
                 {

@@ -11,7 +11,7 @@ is worse than an occasional over-cautious refusal.
 import json
 
 from app.components.groq.client import get_groq_client
-from app.configs.agent_config import AGENT_MODEL
+from app.configs.agent_config import AGENT_MODEL, DESTINATION_NAMES
 
 # Only unambiguous, low-risk-of-false-positive fast-path matches.
 # Everything else is left to the LLM classifier below.
@@ -22,9 +22,11 @@ OBVIOUS_OUT_OF_SCOPE = [
     "currency rate today",
 ]
 
-SCOPE_CHECK_PROMPT = """You are a scope classifier for a Nepal domestic tourism assistant covering \
-exactly 10 destinations: Manaslu Circuit, Annapurna Base Camp, Mardi Himal, Kori, Badimalika, \
-Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa.
+_destinations = ", ".join(DESTINATION_NAMES)
+_destination_count = len(DESTINATION_NAMES)
+
+SCOPE_CHECK_PROMPT = f"""You are a scope classifier for a Nepal domestic tourism assistant covering \
+exactly {_destination_count} destinations: {_destinations}.
 
 In scope: questions about these destinations' routes, permits, budgets, difficulty, best time to \
 visit, culture, or general Nepal trekking/travel planning relevant to them. This includes discovery \
@@ -34,12 +36,12 @@ in scope, since the answer should draw from the 10 covered destinations, even th
 city itself isn't one of them.
 
 Out of scope: live weather/currency data, actual bookings/reservations, medical/emergency advice, \
-or questions specifically ABOUT a place that is not one of the 10 destinations (e.g. "tell me about \
+or questions specifically ABOUT a place that is not one of the {_destination_count} destinations (e.g. "tell me about \
 Pokhara city itself", "what's the best hotel in Kathmandu").
 
-Respond with ONLY a JSON object: {"in_scope": true or false, "reason": "brief reason"}
+Respond with ONLY a JSON object: {{"in_scope": true or false, "reason": "brief reason"}}
 
-Query: {query}"""
+Query: {{query}}"""
 
 
 def check_scope(query: str) -> dict:

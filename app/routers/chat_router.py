@@ -6,6 +6,7 @@ Debug endpoints that exercise individual agent tools directly, plus the real
 its own Swagger input) and streams when stream=true, else returns JSON.
 """
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 
@@ -27,12 +28,16 @@ class QueryRequest(BaseModel):
 
 @router.post("/debug/check-scope")
 async def debug_check_scope(request: QueryRequest):
-    return check_scope(request.query)
+    return await asyncio.to_thread(check_scope, request.query)
 
 
 @router.post("/debug/search")
 async def debug_search(request: QueryRequest):
-    return {"results": search_destinations(request.query, n_results=request.n_results)}
+    return {
+        "results": await asyncio.to_thread(
+            search_destinations, request.query, n_results=request.n_results
+        )
+    }
 
 
 @router.post("/chat")
@@ -71,6 +76,19 @@ async def chat(
 
 
 async def _event_stream(query: str, sender: str) -> AsyncGenerator[str]:
-    async for chunk in handle_turn_stream(query, sender=sender):
+    turn_sink: list = []
+    stream = handle_turn_stream(query, sender, turn_sink=turn_sink)
+    # Drive manually so we can detect completion; once the turn is done,
+    # emit a final metadata event with retrieved_context before [DONE].
+    # The UI ignores non-{chunk} payloads, so this is backward compatible.
+    while True:
+        try:
+            chunk = await stream.__anext__()
+        except StopAsyncIteration:
+            break
         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+    if turn_sink:
+        yield (
+            "data: " + json.dumps({"retrieved_context": turn_sink[0].retrieved_context}) + "\n\n"
+        )
     yield "data: [DONE]\n\n"

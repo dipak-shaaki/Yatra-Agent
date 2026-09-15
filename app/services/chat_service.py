@@ -1,133 +1,51 @@
 """
-Entry point for a user turn: Stage 1 -> Stage 2 -> loop-break -> agent loop.
+Thin adapter over the TurnGraph: maps a graph run to the reply shape the
+router expects and emits one `turn_handled` log line per turn.
 
-handle_turn() returns the complete answer; handle_turn_stream() yields
-chunks. Short-circuit replies (filler/unclear) are yielded as a single
-chunk; only real agent turns stream incrementally.
+All orchestration (stage1 -> stage2 -> loop-break -> agent) lives in
+`app/agent/graph.py`; this module must stay transparent glue.
 """
 
 from collections.abc import AsyncGenerator
 
-from app.agent.agent import run_agent, run_agent_stream
-from app.agent.nodes.loop_breaker_node import (
-    check_loop_break,
-    increment_filler_count,
-    reset_filler_count,
-)
-from app.agent.nodes.stage1_rules_node import classify_stage1, get_templated_reply
-from app.agent.nodes.stage2_classifier_node import classify_stage2
-from app.components.redis.session_store import append_message, get_history
+from app.agent.graph import UNCLEAR_REPLY, Turn, TurnGraph
 from app.utils.logger import log_event
 
-UNCLEAR_REPLY = (
-    "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
-    "best time to visit for 10 Nepal destinations — Manaslu Circuit, Annapurna Base Camp, "
-    "Mardi Himal, Kori, Badimalika, Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa. "
-    "What would you like to know?"
-)
+_graph = TurnGraph()
 
 
-def _get_last_assistant_message(sender: str) -> str:
-    """Looks back a couple of messages (not just the last one) in case the
-    most recent stored message happens to be the user's own prior turn."""
-    history = get_history(sender, limit=2)
-    for msg in reversed(history):
-        if msg["role"] == "assistant":
-            return msg["content"]
-    return ""
+def _log_turn(turn: Turn) -> None:
+    llm_calls = (
+        0 if turn.stage == "stage1" else (1 if turn.stage == "stage2" else "full_agent")
+    )
+    log_event(
+        "turn_handled", stage=turn.stage, category=turn.category, llm_calls=llm_calls
+    )
 
 
 async def handle_turn(query: str, sender: str) -> dict:
-    """Returns {"answer": str, "retrieved_context": list[str]}. Turn Handler
-    short-circuit paths (stage1/stage2 filler/unclear) return empty context,
-    since no retrieval happened for those."""
-    stage1_category = classify_stage1(query)
-
-    if stage1_category:
-        log_event("turn_handled", stage="stage1", category=stage1_category, llm_calls=0)
-        increment_filler_count(sender)
-        loop_break_msg = check_loop_break(sender)
-        reply = loop_break_msg or get_templated_reply(stage1_category)
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        return {"answer": reply, "retrieved_context": []}
-
-    last_assistant_message = _get_last_assistant_message(sender)
-    stage2_category = classify_stage2(
-        query, last_assistant_message=last_assistant_message
-    )
-
-    if stage2_category == "filler":
-        log_event("turn_handled", stage="stage2", category="filler", llm_calls=1)
-        increment_filler_count(sender)
-        loop_break_msg = check_loop_break(sender)
-        reply = loop_break_msg or get_templated_reply("acknowledgment")
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        return {"answer": reply, "retrieved_context": []}
-
-    if stage2_category == "unclear":
-        log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
-        reply = UNCLEAR_REPLY
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        return {"answer": reply, "retrieved_context": []}
-
-    reset_filler_count(sender)
-    log_event(
-        "turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent"
-    )
-    result = await run_agent(query, sender=sender)
-    append_message(sender, "user", query)
-    append_message(sender, "assistant", result["answer"])
-    return result
+    """Returns {"answer": str, "retrieved_context": list[str]}. Short-circuit
+    paths (stage1/stage2 filler/unclear) return empty context, since no
+    retrieval happened for those."""
+    turn = Turn(query=query, sender=sender)
+    await _graph.run(turn)
+    _log_turn(turn)
+    return {"answer": turn.reply, "retrieved_context": turn.retrieved_context}
 
 
-async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str]:
-    stage1_category = classify_stage1(query)
-
-    if stage1_category:
-        log_event("turn_handled", stage="stage1", category=stage1_category, llm_calls=0)
-        increment_filler_count(sender)
-        loop_break_msg = check_loop_break(sender)
-        reply = loop_break_msg or get_templated_reply(stage1_category)
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        yield reply
-        return
-
-    last_assistant_message = _get_last_assistant_message(sender)
-    stage2_category = classify_stage2(
-        query, last_assistant_message=last_assistant_message
-    )
-
-    if stage2_category == "filler":
-        log_event("turn_handled", stage="stage2", category="filler", llm_calls=1)
-        increment_filler_count(sender)
-        loop_break_msg = check_loop_break(sender)
-        reply = loop_break_msg or get_templated_reply("acknowledgment")
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        yield reply
-        return
-
-    if stage2_category == "unclear":
-        log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
-        reply = UNCLEAR_REPLY
-        append_message(sender, "user", query)
-        append_message(sender, "assistant", reply)
-        yield reply
-        return
-
-    reset_filler_count(sender)
-    log_event(
-        "turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent"
-    )
-
-    full_answer = ""
-    async for chunk in run_agent_stream(query, sender=sender):
-        full_answer += chunk
+async def handle_turn_stream(
+    query: str, sender: str, turn_sink: list[Turn] | None = None
+) -> AsyncGenerator[str]:
+    """Yields answer chunks. The completed Turn is appended to `turn_sink`
+    (async generators cannot return values) so the router can emit its
+    retrieved_context as a final metadata event."""
+    turn = Turn(query=query, sender=sender)
+    async for chunk in _graph.run_stream(turn):
         yield chunk
+    _log_turn(turn)
+    if turn_sink is not None:
+        turn_sink.append(turn)
 
-    append_message(sender, "user", query)
-    append_message(sender, "assistant", full_answer)
+
+# Kept importable here for anyone that referenced the constant at this path.
+__all__ = ["UNCLEAR_REPLY", "handle_turn", "handle_turn_stream"]

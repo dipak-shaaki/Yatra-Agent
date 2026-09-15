@@ -21,3 +21,29 @@ def test_openapi_docs_include_v1_routes() -> None:
 
     assert "/api/v1/chat" in schema["paths"]
     assert "/api/v1/documents/upsert" in schema["paths"]
+
+
+def test_documents_upsert_rejects_invalid_admin_token(monkeypatch) -> None:
+    monkeypatch.setenv("ADMIN_API_KEY", "secret-token")
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+    try:
+        from app.main import create_app
+
+        client = TestClient(create_app())
+
+        # Missing header
+        res = client.post(
+            "/api/v1/documents/upsert", json={"filename": "x", "content": "x"}
+        )
+        assert res.status_code == 403
+
+        # Wrong token
+        res = client.post(
+            "/api/v1/documents/upsert",
+            headers={"X-Admin-Token": "wrong"},
+            json={"filename": "x", "content": "x"},
+        )
+        assert res.status_code == 403
+    finally:
+        get_settings.cache_clear()

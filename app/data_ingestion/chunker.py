@@ -34,16 +34,24 @@ def _flatten_metadata(
 
 
 def _parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
-    """Split leading YAML frontmatter (between --- markers) from the rest of the doc."""
-    if not raw_text.startswith("---"):
+    """Split leading YAML frontmatter (a `---`-delimited block at the top)
+    from the rest of the document. Splits on whole `---` lines only, so a
+    `---` appearing later in the body (e.g. a markdown horizontal rule) is
+    never mistaken for the closing marker."""
+    lines = raw_text.splitlines()
+    if not lines or lines[0].strip() != "---":
         raise ValueError("Document missing YAML frontmatter (must start with '---')")
 
-    parts = raw_text.split("---", 2)
-    if len(parts) < 3:
+    end = None
+    for idx, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            end = idx
+            break
+    if end is None:
         raise ValueError("Malformed frontmatter — expected opening and closing '---'")
 
-    frontmatter = yaml.safe_load(parts[1]) or {}
-    body = parts[2].strip()
+    frontmatter = yaml.safe_load("\n".join(lines[1:end])) or {}
+    body = "\n".join(lines[end + 1 :]).strip()
     return frontmatter, body
 
 

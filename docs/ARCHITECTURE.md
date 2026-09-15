@@ -62,42 +62,55 @@ session's Redis history so follow-up questions have context.
   Two debug endpoints expose `check_scope` and `search_destinations` directly
   for manual tool testing.
 - `app/routers/documents_routers.py` — `POST /api/v1/documents/upsert`
-  ingests or updates one destination document (see §5.3).
+  ingests or updates one destination document (see §5.3). Protected by the
+  `X-Admin-Token` header against `ADMIN_API_KEY`; returns 503 if the key is
+  not configured.
 
 ### 2.2 Turn Handler
 
-`app/services/chat_service.py` is the real entry point for a user turn. It
-runs three cheap gates before spending tokens on the full agent:
+The turn orchestration lives in `app/agent/graph.py` (`TurnGraph`), a small
+framework-free class whose nodes are async functions wired via constructor
+injection (default = the real module-level functions, so production needs no
+configuration):
 
 1. **Stage 1 — rule fast-path** (`app/agent/nodes/stage1_rules_node.py`):
    regex match on pure filler (greetings, acknowledgments, farewells).
    Zero LLM calls. The patterns and templated replies are deliberately
    hardcoded here; they are curated copy that should never be duplicated
    elsewhere.
-2. **Stage 2 — LLM classifier** (`app/agent/nodes/stage2_classifier_node.py`):
-   for anything the regex did not match, classify the turn as
+2. **Stage 2 — LLM classifier** (`app/agent/nodes/stage2_classifier_node.py`,
+   **async**): for anything the regex did not match, classify the turn as
    `new_question` / `filler` / `unclear`. It passes the assistant's last
    message as context so short engaged replies ("yes", "I wanna compare")
    are not misread as filler. Fails safe to `new_question` on any error.
 3. **Loop breaker** (`app/agent/nodes/loop_breaker_node.py`): a per-session
    Redis counter that trips after `FILLER_LOOP_THRESHOLD` consecutive filler
    turns and nudges the user back to a real question, then resets.
+4. **Agent node** — runs the full async Groq tool-calling loop (§ 2.3).
 
-Filler and unclear turns never touch the agent loop. Unclear replies go
-through a single shared `UNCLEAR_REPLY` constant so the streaming and
-non-streaming paths cannot drift.
+`app/services/chat_service.py` is now thin glue over the graph: it delegates
+to `TurnGraph.run()` / `run_stream()` and emits the `turn_handled` log line.
+All Redis and sync-tool calls inside the graph and the agent run through
+`asyncio.to_thread` so they never block the event loop.
+
+The streaming path (`run_stream()`) mutates a caller-owned `Turn` (async
+generators cannot return values) and the router reads it afterwards, emitting
+a final SSE metadata event (`{"retrieved_context": [...]}`) before `[DONE]`.
 
 ### 2.3 Agent loop
 
-`app/agent/agent.py` implements the tool-calling loop:
+`app/agent/agent.py` implements the tool-calling loop (now fully async,
+using `AsyncGroq`):
 
 1. Build `messages` = system prompt + Redis history (limited by
-   `CONVERSATION_HISTORY_LIMIT`) + the user query.
+   `CONVERSATION_HISTORY_LIMIT`, fetched via `asyncio.to_thread`) + the
+   user query.
 2. Call Groq with the tool schemas from `app/agent/tool_registry.py`.
 3. If the model returns no tool calls — done; return `{answer,
    retrieved_context}`.
 4. Otherwise append the assistant message **with** `tool_calls`, execute each
-   call, append each result as a `tool` message, and loop (bounded by
+   call (via `asyncio.to_thread`, since the tool functions are synchronous),
+   append each result as a `tool` message, and loop (bounded by
    `MAX_TOOL_ITERATIONS`, then a graceful apology message).
 
 Two entry points:
@@ -106,8 +119,12 @@ Two entry points:
   "retrieved_context"}`. It captures every chunk actually retrieved this turn
   so the faithfulness judge can score against exactly what the agent saw.
 - `run_agent_stream(query, sender)` — streaming. Yields text deltas; tool-call
-  rounds happen silently in between. Content deltas are buffered per
-  `tool_calls` index to reassemble multi-part function names/arguments.
+  rounds happen silently in between. Writes the retrieved chunks into the
+  caller-supplied `retrieved_context` list (since async generators cannot
+  return values).
+
+Content deltas are buffered per `tool_calls` index to reassemble multi-part
+function names/arguments.
 
 ### 2.4 Tools
 
@@ -153,6 +170,7 @@ Everything else imports from these two.
 | `app_name` | `Yatra` | FastAPI title, `/health` |
 | `environment` | `development` | — |
 | `groq_api_key` | **required** | Groq client |
+| `admin_api_key` | `None` | Protects `documents/upsert`; if unset the endpoint returns 503 |
 | `redis_url` | `redis://localhost:6379/0` | Redis client |
 | `chroma_persist_dir` | `<project>/data/chroma_db` | Chroma client |
 | `corpus_dir` | `<project>/data/corpus` | chunking, BM25, document service |
@@ -285,10 +303,10 @@ uv run uvicorn app.main:app --reload
 ### 8.2 Dependencies on external services at runtime
 
 - **Groq API** — every real agent turn, plus stage-2 classification.
-- **Redis** — conversation memory and filler counter. The app does not
-  currently do an explicit connection check at startup (survives a later Redis
-  start); session memory silently degrades to empty history if Redis is down,
-  but agent answers still work.
+- **Redis** — conversation memory and filler counter. The lifespan hook
+  pings Redis at startup (warn-only — the app starts even if Redis is down)
+  and closes the connection on shutdown. Session memory silently degrades to
+  empty history when Redis is unreachable.
 - **Chroma** — persisted locally; preloaded at startup.
 - **Sentence-transformers / `bge-base-en-v1.5`** — preloaded at startup; with
   `HF_HUB_OFFLINE=1` it expects the model in the local HF cache.
@@ -303,7 +321,12 @@ uv run uvicorn app.main:app --reload
 - No user input is executed; the debug endpoints dispatch only to the six
   registered tools.
 - `documents/upsert` writes only into the configured corpus directory and
-  validates the filename to prevent path traversal.
+  validates the filename to prevent path traversal. It is protected by
+  `X-Admin-Token` header against `ADMIN_API_KEY` (returns 403 if the header
+  is missing or wrong; 503 if the key is not configured on the server).
+- Redis, Chroma, and sync tool calls are dispatched via `asyncio.to_thread`
+  inside the agent loop and graph nodes so they never block the FastAPI event
+  loop.
 
 ### 8.4 Known limitations (unchanged by refactor)
 
@@ -330,7 +353,8 @@ app/
 ├── routers/                     # chat + documents + debug endpoints
 ├── services/                    # chat_service (turn handler), document_service
 ├── agent/
-│   ├── agent.py                 # non-streaming + streaming tool loop
+│   ├── graph.py                 # TurnGraph — stage1 → stage2 → agent orchestration
+│   ├── agent.py                 # async Groq tool loop (streaming + non-streaming)
 │   ├── tool_registry.py         # schemas + dispatch
 │   ├── nodes/                   # stage1, stage2, loop breaker
 │   └── tools/                   # 6 tools + destination_resolver

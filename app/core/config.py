@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Groq
     groq_api_key: str
 
+    # Admin (mutating /documents endpoints)
+    admin_api_key: str | None = None
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

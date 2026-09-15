@@ -6,8 +6,8 @@ The patterns and reply pools live here on purpose: this is curated copy
 that should not be duplicated anywhere else.
 """
 
-import random
 import re
+import secrets
 
 GREETING_PATTERNS = [
     r"^hi+$",
@@ -65,4 +65,4 @@ def classify_stage1(message: str) -> str | None:
 def get_templated_reply(category: str) -> str:
     """Pick a random variant from the category's reply pool so repeated
     filler messages do not all receive the identical reply."""
-    return random.choice(TEMPLATED_REPLIES.get(category, ["Okay!"]))
+    return secrets.choice(TEMPLATED_REPLIES.get(category, ["Okay!"]))

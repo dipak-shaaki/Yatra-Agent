@@ -1,13 +1,10 @@
 """
-Agent-level tunable parameters — thresholds, model names, limits.
-Single source of truth: any file needing these imports from here instead
-of hardcoding its own copy, so changing a model or threshold means editing
-one line, not hunting across every file that happens to use it.
+Agent-level tunables (model name, thresholds, limits). Files import these
+instead of hardcoding their own copies.
 """
 
 # Groq model used for every agent-related call (scope check, stage 2
-# classification, tool-calling loop, loop-break message generation).
-# One name here — change once if you swap models.
+# classification, tool loop, loop-break message generation).
 AGENT_MODEL = "openai/gpt-oss-20b"
 
 # Agent loop
@@ -21,5 +18,4 @@ SESSION_TTL_SECONDS = 60 * 60 * 2  # 2 hours of inactivity before a session expi
 # Turn Handler
 FILLER_LOOP_THRESHOLD = 3
 
-TOOL_SELECTION_MAX_TOKENS = 200
 FINAL_ANSWER_MAX_TOKENS = 400

@@ -1,10 +1,9 @@
 """
-Debug endpoints for testing individual agent tools directly (bypassing the
-orchestrator), plus the real /chat endpoint.
+Debug endpoints that exercise individual agent tools directly, plus the real
+/chat endpoint.
 
-/chat takes query, sender, and stream as query parameters (so Swagger renders
-one labeled input box per field plus a true/false `stream` selector) and
-streams its reply when stream=true, or returns plain JSON otherwise.
+/chat takes query, sender, and stream as query parameters (each rendered as
+its own Swagger input) and streams when stream=true, else returns JSON.
 """
 
 import json

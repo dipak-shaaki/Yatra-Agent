@@ -1,13 +1,11 @@
 """
-Guardrail tool — determines whether a query is within Yatra's domain
-(the 10 documented Nepal destinations) before any retrieval happens.
+Guardrail: determines whether a query is within Yatra's domain before any
+retrieval runs.
 
-A small keyword fast-path only catches unambiguous, high-confidence cases
-(saves a Groq call on the clearest ones). Everything else — including
-booking requests, medical questions, and anything not obviously in either
-bucket — goes through the LLM classifier, which generalizes far better
-than a hardcoded phrase list. On any classifier failure, this fails SAFE
-(refuses) rather than open, since this is a guardrail, not a UX nicety.
+A keyword fast path catches a few unambiguous out-of-scope cases without an
+LLM call; everything else goes through an LLM classifier. On classifier
+failure this refuses (fails safe): letting an out-of-scope query through
+is worse than an occasional over-cautious refusal.
 """
 
 import json
@@ -74,8 +72,7 @@ def check_scope(query: str) -> dict:
             "reason": result.get("reason", ""),
         }
     except Exception:
-        # Fail safe: an out-of-scope query slipping through is worse than
-        # an occasional over-cautious refusal, since this is a guardrail.
+        # Fail safe: refusing is safer than letting an out-of-scope query through.
         return {
             "in_scope": False,
             "reason": "Scope check unavailable — defaulting to refuse for safety",

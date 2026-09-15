@@ -9,6 +9,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # Importing the app requires a GROQ_API_KEY value; fall back to a
+      # placeholder so test collection never hard-fails when the secret is
+      # not configured on the repository.
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'ci-placeholder' }}
 
     steps:
       - name: Checkout code
@@ -16,17 +21,27 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Set up Python
+      # .python-version and pyproject require >=3.13; install it explicitly
+      # because the runner image only ships an older system Python.
+      - name: Set up Python 3.13
         run: uv python install 3.13
 
+      # --frozen fails loudly if uv.lock drifts from pyproject.toml.
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Lint with ruff
         run: uv run ruff check .
 
+      - name: Check formatting with ruff
+        run: uv run ruff format --check .
+
+      - name: Compile all Python sources
+        run: uv run python -m compileall -q app scripts eval tests
+
       - name: Run tests
         run: uv run pytest tests/ -v
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

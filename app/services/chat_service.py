@@ -1,11 +1,9 @@
 """
-The real entry point for a user turn: Stage 1 -> Stage 2 -> loop-break ->
-(only if none of those short-circuit) the full agent loop.
+Entry point for a user turn: Stage 1 -> Stage 2 -> loop-break -> agent loop.
 
-handle_turn() is the non-streaming version (returns a complete string).
-handle_turn_stream() is the streaming version (yields chunks) — Turn
-Handler's instant replies are yielded as a single chunk; only real agent
-turns stream incrementally.
+handle_turn() returns the complete answer; handle_turn_stream() yields
+chunks. Short-circuit replies (filler/unclear) are yielded as a single
+chunk; only real agent turns stream incrementally.
 """
 
 from collections.abc import AsyncGenerator

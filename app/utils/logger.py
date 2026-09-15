@@ -1,7 +1,4 @@
-"""
-Structured logging helper: logs as
-[timestamp] [LEVEL] [name] event_name | key=value | key=value
-"""
+"""Log structured key=value events via the shared 'yatra' logger."""
 
 import logging
 

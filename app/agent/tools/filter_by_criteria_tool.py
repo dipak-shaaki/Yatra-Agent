@@ -1,9 +1,8 @@
 """
-Metadata-filtered discovery tool — for queries like "easy treks near Pokhara"
-or "destinations in Gandaki province" where the user wants a *set* of matching
-destinations, not a single factual lookup. Filters on frontmatter metadata
-(province, difficulty_level, type) rather than relying on semantic search alone,
-since these are categorical facts embeddings can miss or blur.
+Metadata-filtered discovery for queries like "easy treks near Pokhara" or
+"destinations in Gandaki province" that expect a set of matches. Filters on
+frontmatter metadata (province, difficulty_level, type), which embeddings
+tend to miss or blur.
 """
 
 from app.db.chroma.client import get_collection
@@ -15,13 +14,10 @@ def filter_by_criteria(
     type: str | None = None,
     max_results: int = 10,
 ) -> list[dict]:
-    """
-    Returns destinations matching the given metadata filters, deduplicated
-    by destination name (since a match can come from multiple section chunks
-    of the same destination).
+    """Return destinations matching the given metadata filters, deduplicated
+    by name (one destination can match via several section chunks).
 
-    All params are optional — pass only the ones the user specified. At least
-    one should be provided or this just returns arbitrary chunks.
+    All params are optional; with none set there is nothing to filter on.
     """
     collection = get_collection()
 
@@ -43,8 +39,9 @@ def filter_by_criteria(
     )
 
     results = collection.get(
-        where=where, limit=max_results * 5
-    )  # over-fetch, we'll dedupe
+        where=where,
+        limit=max_results * 5,  # over-fetch, then dedupe
+    )
 
     seen_destinations = {}
     for metadata in results["metadatas"]:

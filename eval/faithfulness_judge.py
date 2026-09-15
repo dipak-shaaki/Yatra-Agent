@@ -1,12 +1,9 @@
 """
-LLM-as-judge faithfulness check: given the retrieved context and a final
-answer, flags any claim in the answer NOT supported by that context.
+LLM-as-judge faithfulness check: given retrieved context and a final answer,
+flags any claim in the answer not supported by the context.
 
-This is the one eval metric that genuinely needs an LLM (vs. Precision@K/
-Recall@K/tool-accuracy, which are deterministic) — catching a wrong number
-or fabricated detail requires actually comparing claims, not just word
-overlap, which is why we're not using the word-overlap approach common in
-generic RAG eval guides.
+Needs an LLM because catching a wrong number or a fabricated detail requires
+comparing claims, not word overlap.
 """
 
 import json

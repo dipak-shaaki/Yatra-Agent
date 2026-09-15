@@ -1,7 +1,6 @@
 """
-Admin endpoint(s) for managing the destination corpus. Not part of the
-end-user chat flow — separate router since this is a data-management
-concern, not a conversational one.
+Admin endpoints for managing the destination corpus, kept separate from the
+end-user chat flow.
 """
 
 from fastapi import APIRouter, HTTPException

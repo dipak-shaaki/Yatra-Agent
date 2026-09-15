@@ -1,12 +1,10 @@
 """
-Runs eval/cases/*.jsonl against the real running system (via HTTP, so it
-exercises the full stack — Turn Handler, agent loop, tools — not just
-individual functions in isolation).
+Runs eval/cases/*.jsonl against the running system over HTTP, exercising the
+full stack (Turn Handler, agent loop, tools).
 
-This is a lightweight first pass: it captures actual system output per case
-so a human (or a follow-up LLM-as-judge step) can score faithfulness/
-correctness. It does NOT auto-grade "expected_answer" matches, since that's
-free-text and hard to compare exactly — see the printed comparison instead.
+Captures each case's actual output and retrieved context for a human or the
+LLM-as-judge step to score. It does not auto-grade expected_answer — that is
+free text and hard to compare exactly.
 """
 
 import json

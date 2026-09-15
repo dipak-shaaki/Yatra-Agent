@@ -1,12 +1,10 @@
 """
-Handles document ingestion/updates: writes corpus markdown to disk,
-re-chunks just that file, re-embeds its chunks, upserts into Chroma
-(only touches this destination's chunk IDs), and resets BM25 so it
-rebuilds from the full corpus on next use.
+Document ingestion/update: write the corpus markdown, re-chunk that one
+file, re-embed, upsert into Chroma (only that destination's chunk IDs), and
+reset the BM25 cache so it rebuilds on next use.
 
-BM25 has no incremental-update API (unlike Chroma's upsert), so a full
-rebuild is unavoidable on any content change — cheap (tokenization only,
-no embedding calls) but worth being explicit about, not hidden.
+BM25 has no incremental-update API, so any content change forces a full
+rebuild — cheap (tokenization only, no embedding calls).
 """
 
 from pathlib import Path
@@ -33,9 +31,7 @@ def upsert_document(filename: str, content: str) -> dict:
         )
 
     file_path = CORPUS_DIR / f"{filename}.md"
-    is_update = (
-        file_path.exists()
-    )  # distinguish create vs. update for logging/response clarity
+    is_update = file_path.exists()  # reported in the response/logs
 
     file_path.write_text(content, encoding="utf-8")
     log_event(
@@ -53,9 +49,8 @@ def upsert_document(filename: str, content: str) -> dict:
             "warning": "Document produced zero chunks — check formatting",
         }
 
-    # Delete ALL existing chunks for this file first — not just overwrite
-    # matching IDs — so a removed or renamed section doesn't leave a stale,
-    # orphaned chunk behind in Chroma.
+    # Delete this file's existing chunks first so a removed or renamed
+    # section does not leave orphaned chunks behind in Chroma.
     source_file = file_path.name
     deleted_count = delete_chunks_by_source_file(source_file)
     if deleted_count:

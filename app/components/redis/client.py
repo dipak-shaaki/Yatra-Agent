@@ -1,6 +1,4 @@
-"""
-Redis connection setup pure client management.
-"""
+"""Redis connection setup — client management only, no business logic."""
 
 from functools import lru_cache
 

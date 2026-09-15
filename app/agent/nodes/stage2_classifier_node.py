@@ -1,9 +1,8 @@
 """
-Stage 2 — LLM fallback for ambiguous cases Stage 1's regex didn't cleanly
-match. Includes the last assistant message as context, since short
-follow-ups ("yes", "I wanna compare") are often direct responses to
-something the assistant just asked — classifying them in isolation
-misreads them as filler/unclear.
+Stage 2 — LLM classification for turns Stage 1's regex did not catch.
+
+The assistant's last message is included as context so short follow-ups
+("yes", "I wanna compare") are not misread as filler or unclear.
 """
 
 import json

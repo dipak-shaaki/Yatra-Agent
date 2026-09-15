@@ -1,8 +1,7 @@
 """
 Runs the faithfulness judge against eval/results.jsonl, using the
-retrieved_context each case actually captured during its real run —
-not a separate re-retrieval, which previously caused inconsistent
-verdicts on the same underlying facts.
+retrieved_context each case captured during its real run rather than a
+separate re-retrieval (which previously caused inconsistent verdicts).
 """
 
 import json

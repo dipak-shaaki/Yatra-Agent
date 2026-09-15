@@ -1,15 +1,10 @@
 """
-The agent loop: send messages + tool schemas to Groq, execute whichever
-tool(s) it calls, feed results back as tool messages, and repeat until
-the model responds with plain content instead of another tool call.
-
-This is what makes Yatra agentic rather than a fixed retrieve-then-generate
-pipeline — the model decides, per turn, how many tools to call and in what
-order (e.g. check_scope -> search_destinations -> final answer).
+Tool-calling loop against Groq: send the conversation plus tool schemas,
+execute any tool calls the model returns, feed the results back as tool
+messages, and repeat until the model answers with plain content.
 
 Two entry points: run_agent() (non-streaming) and run_agent_stream()
-(yields text chunks as they arrive). The /chat endpoint picks between them
-via its `stream=true|false` query parameter.
+(streaming). /chat selects between them via `stream=true|false`.
 """
 
 import json
@@ -162,10 +157,10 @@ async def run_agent(user_query: str, sender: str) -> dict:
 
 
 async def run_agent_stream(user_query: str, sender: str) -> AsyncGenerator[str]:
-    """
-    Yields text chunks as they're generated. Tool-call rounds happen
-    silently between yields — only final-answer generation actually
-    streams text to the caller.
+    """Yield text chunks as they are generated.
+
+    Tool-call rounds run silently between yields; only final-answer
+    generation streams text to the caller.
     """
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]

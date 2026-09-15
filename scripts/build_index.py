@@ -2,6 +2,7 @@
 Chunk the corpus, embed every chunk, and upsert into Chroma.
 """
 
+from app.core.config import get_settings
 from app.data_ingestion.chunker import chunk_corpus_dir
 from app.db.chroma.client import reset_collection, upsert_chunks
 from app.retrieval.embeddings import embed_documents
@@ -9,7 +10,7 @@ from app.retrieval.embeddings import embed_documents
 
 def main():
     print("Chunking corpus...")
-    chunks = chunk_corpus_dir("data/corpus")
+    chunks = chunk_corpus_dir(get_settings().corpus_dir)
     print(f"  {len(chunks)} chunks from corpus")
 
     print("Embedding chunks (first run downloads the model, may take a bit)...")

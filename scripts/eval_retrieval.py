@@ -1,12 +1,11 @@
 """
-Retrieval-level eval: Precision@K, Recall@K, MRR — computed directly
-against hybrid_search(), no LLM calls, no server needed.
+Retrieval-level eval: Precision@K, Recall@K, MRR against hybrid_search().
+No LLM calls, no server needed.
 
-Deliberately skips word-overlap-based "groundedness"/"hallucination" scoring
-(seen in generic RAG eval guides) since it can't distinguish a correct fact
-from a wrong one using the same vocabulary — e.g. it would score "permits
-cost NPR 50,000" as grounded even if the source says NPR 10,000, as long as
-the words overlap. Faithfulness needs an LLM judge instead (built separately).
+Skips word-overlap "groundedness" scoring: it cannot tell a correct fact
+from a wrong one when vocabulary overlaps (e.g. "permits cost NPR 50,000"
+would pass even if the source said NPR 10,000). Faithfulness uses an LLM
+judge instead.
 """
 
 import json

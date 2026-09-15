@@ -1,10 +1,10 @@
 """
 Debug endpoints for testing individual agent tools directly (bypassing the
-orchestrator), plus the real document-management and chat endpoints.
+orchestrator), plus the real /chat endpoint.
 
-/chat takes a JSON body ({"query": ..., "sender": ...}) and streams its
-reply when called with ?stream=true, or returns plain JSON otherwise —
-one endpoint, one request shape, toggled by a query param.
+/chat takes query, sender, and stream as query parameters (so Swagger renders
+one labeled input box per field plus a true/false `stream` selector) and
+streams its reply when stream=true, or returns plain JSON otherwise.
 """
 import json
 from typing import AsyncGenerator
@@ -25,11 +25,6 @@ class QueryRequest(BaseModel):
     n_results: int = 5
 
 
-class ChatRequest(BaseModel):
-    query: str
-    sender: str
-
-
 @router.post("/debug/check-scope")
 async def debug_check_scope(request: QueryRequest):
     return check_scope(request.query)
@@ -42,15 +37,31 @@ async def debug_search(request: QueryRequest):
 
 @router.post("/chat")
 async def chat(
-    request: ChatRequest,
-    stream: bool = Query(False, description="If true, streams the answer as SSE chunks instead of returning plain JSON."),
+    query: str = Query(
+        ...,
+        description="The user's message to Yatra",
+        examples=["Compare an easy trek near Pokhara with something under NPR 30,000."],
+    ),
+    sender: str = Query(
+        ...,
+        description="Conversation/session identifier used for Redis memory",
+        examples=["test_user"],
+    ),
+    stream: bool = Query(
+        False,
+        description="`false` returns the full answer as JSON; `true` streams it as SSE chunks.",
+    ),
 ):
-    """Send a message to Yatra. Pass ?stream=true to get the answer as a
-    Server-Sent Events stream of text chunks instead of a single JSON body."""
-    if stream:
-        return StreamingResponse(_event_stream(request.query, request.sender), media_type="text/event-stream")
+    """Send a message to Yatra.
 
-    result = await handle_turn(request.query, sender=request.sender)
+    All fields are query parameters, so Swagger renders one labeled input box
+    per field plus a true/false `stream` selector. Pass stream=true to get the
+    answer as a Server-Sent Events (SSE) stream of text chunks.
+    """
+    if stream:
+        return StreamingResponse(_event_stream(query, sender), media_type="text/event-stream")
+
+    result = await handle_turn(query, sender=sender)
     return {"answer": result["answer"], "retrieved_context": result["retrieved_context"]}
 
 

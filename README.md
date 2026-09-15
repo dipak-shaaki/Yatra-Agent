@@ -313,47 +313,47 @@ Model names, thresholds, and system limits are centralized in `app/configs/agent
 
 ## Project Structure
 
-The project follows a layered architecture with routers, services, and repositories/components separated by responsibility.
+The project follows a layered architecture with routers, services, and components separated by responsibility. The full map of every module and its role lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```
 .
 ├── app/
-│   ├── routers/              # FastAPI routes (chat, debug)
-│   ├── services/             # chat_service (turn handler), token_logger
+│   ├── routers/              # FastAPI routes (chat, documents, debug)
+│   ├── services/             # chat_service (turn handler), document_service
 │   ├── agent/
 │   │   ├── nodes/            # stage1_rules, stage2_classifier, loop_breaker
-│   │   ├── tools/            # 6 agent tools + destination_resolver
-│   │   └── schemas/          # state schema
+│   │   └── tools/            # 6 agent tools + destination_resolver
 │   ├── components/           # groq client, redis client/session store
-│   ├── configs/              # agent_config.py, retrieval_config.py
-│   ├── core/                 # settings, exceptions, logging
-│   ├── data_ingestion/       # loader, section-based chunker
+│   ├── configs/              # agent_config.py (single source of truth)
+│   ├── core/                 # settings, logging
+│   ├── data_ingestion/       # section-based chunker
 │   ├── db/chroma/            # chroma client
-│   ├── middleware/           # error_handler, request_id
-│   ├── models/               # destination, conversation models
-│   ├── repositories/         # destination, conversation repos
 │   ├── retrieval/            # hybrid_retriever, bm25_index, embeddings, fusion
-│   ├── schemas/              # chat, retrieval, token_usage schemas
-│   └── utils/                # logger
+│   ├── schemas/              # request/response schemas
+│   └── utils/                # structured logger
 ├── data/
 │   ├── corpus/               # 10 destination Markdown documents
 │   ├── raw/                  # 10 destination JSON documents
-│   └── chroma_db/            # persisted Chroma store
+│   └── chroma_db/            # persisted Chroma store (gitignored)
 ├── eval/
 │   ├── cases/                # eval case sets (JSONL)
-│   ├── run_eval.py           # functional eval runner
 │   ├── faithfulness_judge.py # LLM faithfulness evaluator
 │   └── results*.jsonl        # recorded results
-├── scripts/                  # build_index, eval, seed, test scripts
-├── tests/                    # unit + integration tests
-├── docker/                   # Dockerfile.api, docker-compose (Redis)
+├── scripts/                  # build_index, retrieval/functional/faithfulness eval
+├── tests/                    # chunker unit tests + app smoke tests
+├── docker/                   # docker-compose (Redis)
 ├── ui/                       # React + Vite chat frontend
+├── docs/                     # architecture reference
 ├── README.md
 ├── pyproject.toml
 └── uv.lock
 ```
 
-The architecture follows a Router → Service → Repository-style separation adapted for a single-tenant RAG application. It intentionally avoids unnecessary multi-tenant or enterprise orchestration complexity because the current corpus contains only 10 destinations.
+This is a deliberately opinionated structure for a single-tenant RAG
+application: the agent loop is the orchestrator, services are the entry
+points, and tools + retrieval are the capabilities. It intentionally avoids
+multi-tenant or enterprise orchestration complexity because the current
+corpus contains only 10 destinations.
 
 ## Data
 
@@ -414,9 +414,7 @@ The end-to-end functional evaluation contains 12 cases covering:
 - Conflicting-source scenario
 - Filler conversation
 
-**Result:** 12 / 12 completed successfully, 0 errors.
-
-This validates that the major system paths execute successfully across the current evaluation set.
+**Result:** In the recorded run (`eval/results.jsonl`), 12 cases executed; 1 timeout (`discovery_001`) and 1 case produced no answer (`adversarial_001`) were captured as non-errors on the request path but flagged for review. Results are recorded per case rather than collapsed into a single pass/fail number.
 
 ### Faithfulness Evaluation
 
@@ -437,7 +435,7 @@ This can result in inconsistent judgments. Some cases flagged as unfaithful were
 
 ## Known Limitations
 
-1. **Faithfulness Context Capture** — The faithfulness judge does not currently receive the exact context used by the agent; instead it performs its own retrieval. This can produce inconsistent evaluation results. *Planned fix:* capture the actual retrieved chunks during each agent turn and pass those exact chunks to the faithfulness judge.
+1. **Faithfulness Context Capture** — The non-streaming path captures the exact chunks retrieved during each agent turn and hands them to the faithfulness judge (§ Functional Eval above). *Remaining gap:* the streaming path (`run_agent_stream`) still does not capture `retrieved_context` or log token usage, so streamed turns cannot yet be judged for faithfulness.
 
 2. **Approximate Budget Calculations** — Budget information in the corpus is not consistently structured. Some values represent daily costs while others represent complete-trip estimates. The final budget answer is therefore an LLM-based estimate rather than independently verified arithmetic.
 
@@ -481,7 +479,7 @@ This will make faithfulness evaluation substantially more meaningful.
 
 2. **SSE Streaming** — *Done.* `/chat` prints its reply as a Server-Sent Events stream when called with `?stream=true` (selectable in Swagger), and returns plain JSON otherwise.
 
-3. **Incremental Document Ingestion** — Add a document ingestion/update endpoint that can update one destination document, re-chunk it, re-generate embeddings, update Chroma and BM25 indexes, and avoid rebuilding the entire corpus. For example, `PUT /destinations/{destination_id}` would update only the affected destination.
+3. **Incremental Document Ingestion** — *Done.* `POST /api/v1/documents/upsert` ingests or updates a single destination document: it re-chunks that one file, deletes its stale Chroma chunks, re-embeds, upserts, and resets BM25 — no full-corpus rebuild.
 
 4. **Expand Evaluation Dataset** — The current evaluation set contains 12 functional cases and 7 labeled retrieval cases. Future evaluation should expand coverage across more destinations, more query formulations, multi-hop questions, more adversarial queries, retrieval edge cases, budget questions, comparison questions, conversation-context questions, and tool-selection behavior.
 
@@ -650,8 +648,10 @@ npm run dev
 ### Running Evaluations
 
 ```bash
-uv run python scripts/eval_retrieval.py      # retrieval metrics
-uv run python scripts/eval_faithfulness.py   # LLM faithfulness judge
+uv run python scripts/build_index.py       # (re)build the retrieval index
+uv run python scripts/eval_retrieval.py    # retrieval metrics
+uv run python scripts/run_eval.py          # end-to-end eval (needs running API)
+uv run python scripts/eval_faithfulness.py # LLM faithfulness judge
 ```
 
 ## Current Status
@@ -671,7 +671,7 @@ uv run python scripts/eval_faithfulness.py   # LLM faithfulness judge
 | Loop breaking | ✅ |
 | Retrieval evaluation | ✅ |
 | Functional evaluation | ✅ |
-| LLM faithfulness evaluation | ⚠️ Needs improved context capture |
+| LLM faithfulness evaluation | ✅ Non-streaming turns capture exact context; ⚠️ streaming path not yet captured |
 | SSE streaming | ✅ Single `/chat` endpoint, `?stream=true/false` |
 | Incremental ingestion | 🔲 Planned |
 | Expanded evaluation set | 🔲 Planned |

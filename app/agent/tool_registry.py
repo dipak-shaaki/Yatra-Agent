@@ -18,13 +18,16 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The user's query to check"},
+                    "query": {
+                        "type": "string",
+                        "description": "The user's query to check",
+                    },
                 },
                 "required": ["query"],
             },
         },
     },
-        {
+    {
         "type": "function",
         "function": {
             "name": "filter_by_criteria",
@@ -77,7 +80,7 @@ TOOL_SCHEMAS = [
             },
         },
     },
-        {
+    {
         "type": "function",
         "function": {
             "name": "compare_destinations",
@@ -102,7 +105,7 @@ TOOL_SCHEMAS = [
             },
         },
     },
-            {
+    {
         "type": "function",
         "function": {
             "name": "calculate_budget_estimate",
@@ -114,13 +117,16 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "destination_name": {"type": "string"},
-                    "num_days": {"type": "integer", "description": "Trip length in days, if specified"},
+                    "num_days": {
+                        "type": "integer",
+                        "description": "Trip length in days, if specified",
+                    },
                 },
                 "required": ["destination_name"],
             },
         },
     },
-        {
+    {
         "type": "function",
         "function": {
             "name": "get_conversation_context",
@@ -132,8 +138,14 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "sender": {"type": "string", "description": "Session/user identifier"},
-                    "num_turns": {"type": "integer", "description": "How many recent messages to retrieve"},
+                    "sender": {
+                        "type": "string",
+                        "description": "Session/user identifier",
+                    },
+                    "num_turns": {
+                        "type": "integer",
+                        "description": "How many recent messages to retrieve",
+                    },
                 },
                 "required": ["sender"],
             },

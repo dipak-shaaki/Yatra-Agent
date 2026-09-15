@@ -5,6 +5,7 @@ follow-ups ("yes", "I wanna compare") are often direct responses to
 something the assistant just asked — classifying them in isolation
 misreads them as filler/unclear.
 """
+
 import json
 
 from app.components.groq.client import get_groq_client
@@ -28,17 +29,20 @@ Assistant's last message (for context, may be empty if this is the first message
 
 User's latest message: {message}"""
 
+
 def classify_stage2(message: str, last_assistant_message: str = "") -> str:
     client = get_groq_client()
     try:
         response = client.chat.completions.create(
             model=AGENT_MODEL,
-            messages=[{
-                "role": "user",
-                "content": STAGE2_PROMPT
-                    .replace("{message}", message)
-                    .replace("{last_assistant_message}", last_assistant_message or "(none)"),
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": STAGE2_PROMPT.replace("{message}", message).replace(
+                        "{last_assistant_message}", last_assistant_message or "(none)"
+                    ),
+                }
+            ],
             temperature=0,
             max_tokens=300,
         )

@@ -2,8 +2,12 @@
 Loop-breaker — if a session hits N consecutive filler turns, proactively
 break the pattern instead of silently continuing to short-circuit forever.
 """
+
 from app.components.redis.client import get_redis_client
-from app.configs.agent_config import FILLER_LOOP_THRESHOLD
+from app.configs.agent_config import (
+    FILLER_LOOP_THRESHOLD,
+    SESSION_TTL_SECONDS,
+)
 
 LOOP_BREAK_MESSAGE = "Just checking — is there something specific about Nepal travel I can help with, or are we good for now?"
 
@@ -16,7 +20,7 @@ def increment_filler_count(sender: str) -> int:
     client = get_redis_client()
     key = _filler_counter_key(sender)
     count = client.incr(key)
-    client.expire(key, 60 * 60 * 2)  # same TTL as session history
+    client.expire(key, SESSION_TTL_SECONDS)  # same TTL as session history
     return count
 
 

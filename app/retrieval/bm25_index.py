@@ -1,21 +1,22 @@
 """
 In-memory BM25 sparse index over the corpus chunks.
 
-Unlike Chroma, BM25 has no natural persistence/upsert API,rebuilding it
+Unlike Chroma, BM25 has no natural persistence/upsert API — rebuilding it
 from the full chunk set is cheap (just tokenization, no embedding calls),
 so we rebuild in memory on load rather than persisting to disk.
 """
+
 import re
 from functools import lru_cache
 
 from rank_bm25 import BM25Okapi
 
+from app.core.config import get_settings
 from app.data_ingestion.chunker import chunk_corpus_dir
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 COMMA_IN_NUMBER_RE = re.compile(r"(?<=\d),(?=\d)")
-
 
 
 def _tokenize(text: str) -> list[str]:
@@ -40,8 +41,10 @@ class BM25Index:
 
 
 @lru_cache
-def get_bm25_index(corpus_dir: str = "data/corpus") -> BM25Index:
+def get_bm25_index(corpus_dir: str | None = None) -> BM25Index:
     """Cached singleton — rebuild by clearing the cache (see reset below)."""
+    if corpus_dir is None:
+        corpus_dir = get_settings().corpus_dir
     chunks = chunk_corpus_dir(corpus_dir)
     return BM25Index(chunks)
 

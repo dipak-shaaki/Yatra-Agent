@@ -9,6 +9,7 @@ Design notes:
 - TTL is reset on every write, so an active conversation never expires
   mid-session, but an abandoned one cleans itself up automatically.
 """
+
 import json
 
 from app.components.redis.client import get_redis_client

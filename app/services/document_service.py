@@ -8,15 +8,18 @@ BM25 has no incremental-update API (unlike Chroma's upsert), so a full
 rebuild is unavoidable on any content change — cheap (tokenization only,
 no embedding calls) but worth being explicit about, not hidden.
 """
+
 from pathlib import Path
 
+from app.core.config import get_settings
 from app.data_ingestion.chunker import _parse_frontmatter, chunk_document
 from app.db.chroma.client import delete_chunks_by_source_file, upsert_chunks
 from app.retrieval.bm25_index import reset_bm25_index
 from app.retrieval.embeddings import embed_documents
 from app.utils.logger import log_event
 
-CORPUS_DIR = Path("data/corpus")
+CORPUS_DIR = Path(get_settings().corpus_dir)
+
 
 def upsert_document(filename: str, content: str) -> dict:
     try:
@@ -25,18 +28,30 @@ def upsert_document(filename: str, content: str) -> dict:
         raise ValueError(f"Invalid document format, not written: {e}")
 
     if not frontmatter.get("name"):
-        raise ValueError("Document frontmatter must include a 'name' field, not written")
+        raise ValueError(
+            "Document frontmatter must include a 'name' field, not written"
+        )
 
     file_path = CORPUS_DIR / f"{filename}.md"
-    is_update = file_path.exists()  # distinguish create vs. update for logging/response clarity
+    is_update = (
+        file_path.exists()
+    )  # distinguish create vs. update for logging/response clarity
 
     file_path.write_text(content, encoding="utf-8")
-    log_event("document_written", filename=filename, bytes=len(content), is_update=is_update)
+    log_event(
+        "document_written", filename=filename, bytes=len(content), is_update=is_update
+    )
 
     chunks = chunk_document(file_path)
     if not chunks:
-        log_event("document_upsert_warning", filename=filename, reason="no chunks produced")
-        return {"filename": filename, "chunks_written": 0, "warning": "Document produced zero chunks — check formatting"}
+        log_event(
+            "document_upsert_warning", filename=filename, reason="no chunks produced"
+        )
+        return {
+            "filename": filename,
+            "chunks_written": 0,
+            "warning": "Document produced zero chunks — check formatting",
+        }
 
     # Delete ALL existing chunks for this file first — not just overwrite
     # matching IDs — so a removed or renamed section doesn't leave a stale,
@@ -44,7 +59,11 @@ def upsert_document(filename: str, content: str) -> dict:
     source_file = file_path.name
     deleted_count = delete_chunks_by_source_file(source_file)
     if deleted_count:
-        log_event("document_old_chunks_deleted", filename=filename, deleted_count=deleted_count)
+        log_event(
+            "document_old_chunks_deleted",
+            filename=filename,
+            deleted_count=deleted_count,
+        )
 
     texts = [c["text"] for c in chunks]
     embeddings = embed_documents(texts)

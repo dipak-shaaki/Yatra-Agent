@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
 
     app.include_router(chat_router, prefix="/api/v1")
     app.include_router(documents_router, prefix="/api/v1")
+
     @app.get("/health")
     async def health():
         return {"status": "ok", "app": settings.app_name}

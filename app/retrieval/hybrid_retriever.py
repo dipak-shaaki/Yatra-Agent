@@ -1,13 +1,16 @@
 """
 Ties dense (Chroma) + sparse (BM25) search together via RRF.
 """
+
 from app.db.chroma.client import query_collection
 from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.embeddings import embed_query
 from app.retrieval.fusion import reciprocal_rank_fusion
 
 
-def hybrid_search(query: str, n_results: int = 5, candidate_pool: int = 10) -> list[dict]:
+def hybrid_search(
+    query: str, n_results: int = 5, candidate_pool: int = 10
+) -> list[dict]:
     """
     Returns the top n_results fused chunks as:
       [{"id": ..., "text": ..., "metadata": ..., "score": ...}, ...]
@@ -35,10 +38,12 @@ def hybrid_search(query: str, n_results: int = 5, candidate_pool: int = 10) -> l
     for chunk_id, score in fused:
         chunk = chunk_lookup.get(chunk_id)
         if chunk:
-            results.append({
-                "id": chunk_id,
-                "text": chunk["text"],
-                "metadata": chunk["metadata"],
-                "score": score,
-            })
+            results.append(
+                {
+                    "id": chunk_id,
+                    "text": chunk["text"],
+                    "metadata": chunk["metadata"],
+                    "score": score,
+                }
+            )
     return results

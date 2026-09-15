@@ -7,6 +7,7 @@ handle_turn_stream() is the streaming version (yields chunks) — Turn
 Handler's instant replies are yielded as a single chunk; only real agent
 turns stream incrementally.
 """
+
 from collections.abc import AsyncGenerator
 
 from app.agent.agent import run_agent, run_agent_stream
@@ -20,6 +21,13 @@ from app.agent.nodes.stage2_classifier_node import classify_stage2
 from app.components.redis.session_store import append_message, get_history
 from app.utils.logger import log_event
 
+UNCLEAR_REPLY = (
+    "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
+    "best time to visit for 10 Nepal destinations — Manaslu Circuit, Annapurna Base Camp, "
+    "Mardi Himal, Kori, Badimalika, Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa. "
+    "What would you like to know?"
+)
+
 
 def _get_last_assistant_message(sender: str) -> str:
     """Looks back a couple of messages (not just the last one) in case the
@@ -29,6 +37,7 @@ def _get_last_assistant_message(sender: str) -> str:
         if msg["role"] == "assistant":
             return msg["content"]
     return ""
+
 
 async def handle_turn(query: str, sender: str) -> dict:
     """Returns {"answer": str, "retrieved_context": list[str]}. Turn Handler
@@ -46,7 +55,9 @@ async def handle_turn(query: str, sender: str) -> dict:
         return {"answer": reply, "retrieved_context": []}
 
     last_assistant_message = _get_last_assistant_message(sender)
-    stage2_category = classify_stage2(query, last_assistant_message=last_assistant_message)
+    stage2_category = classify_stage2(
+        query, last_assistant_message=last_assistant_message
+    )
 
     if stage2_category == "filler":
         log_event("turn_handled", stage="stage2", category="filler", llm_calls=1)
@@ -59,17 +70,20 @@ async def handle_turn(query: str, sender: str) -> dict:
 
     if stage2_category == "unclear":
         log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
-        reply = "I didn't quite catch that — could you rephrase your question about Nepal travel?"
+        reply = UNCLEAR_REPLY
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
         return {"answer": reply, "retrieved_context": []}
 
     reset_filler_count(sender)
-    log_event("turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent")
+    log_event(
+        "turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent"
+    )
     result = await run_agent(query, sender=sender)
     append_message(sender, "user", query)
     append_message(sender, "assistant", result["answer"])
     return result
+
 
 async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str]:
     stage1_category = classify_stage1(query)
@@ -85,7 +99,9 @@ async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str]:
         return
 
     last_assistant_message = _get_last_assistant_message(sender)
-    stage2_category = classify_stage2(query, last_assistant_message=last_assistant_message)
+    stage2_category = classify_stage2(
+        query, last_assistant_message=last_assistant_message
+    )
 
     if stage2_category == "filler":
         log_event("turn_handled", stage="stage2", category="filler", llm_calls=1)
@@ -99,19 +115,16 @@ async def handle_turn_stream(query: str, sender: str) -> AsyncGenerator[str]:
 
     if stage2_category == "unclear":
         log_event("turn_handled", stage="stage2", category="unclear", llm_calls=1)
-        reply = (
-            "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
-            "best time to visit for 10 Nepal destinations — Manaslu Circuit, Annapurna Base Camp, "
-            "Mardi Himal, Kori, Badimalika, Bandipur, Panauti, Gorkha, Rara Lake, and Tansen/Palpa. "
-            "What would you like to know?"
-        )
+        reply = UNCLEAR_REPLY
         append_message(sender, "user", query)
         append_message(sender, "assistant", reply)
         yield reply
         return
 
     reset_filler_count(sender)
-    log_event("turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent")
+    log_event(
+        "turn_handled", stage="agent", category=stage2_category, llm_calls="full_agent"
+    )
 
     full_answer = ""
     async for chunk in run_agent_stream(query, sender=sender):

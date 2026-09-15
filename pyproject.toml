@@ -1,7 +1,7 @@
 [project]
 name = "yatra-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Agentic RAG assistant for Nepal domestic tourism — hybrid retrieval, Groq function calling, Redis conversation memory."
 readme = "README.md"
 authors = [
     { name = "dipak-shaaki", email = "shanki.dipak@gmail.com" }
@@ -22,9 +22,6 @@ dependencies = [
     "uvicorn[standard]>=0.52.4",
 ]
 
-[project.scripts]
-yatra-agent = "yatra_agent:main"
-
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
@@ -40,9 +37,8 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.uv.build-backend]
-module-name = "app"
-module-root = "."
-
 [tool.ruff.lint]
 ignore = ["BLE001"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

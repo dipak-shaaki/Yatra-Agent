@@ -1,6 +1,7 @@
 """
 Chunk the corpus, embed every chunk, and upsert into Chroma.
 """
+
 from app.data_ingestion.chunker import chunk_corpus_dir
 from app.db.chroma.client import reset_collection, upsert_chunks
 from app.retrieval.embeddings import embed_documents

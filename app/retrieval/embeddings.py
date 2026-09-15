@@ -2,6 +2,7 @@
 Wraps the self-hosted embedding model (bge-base-en-v1.5) so the rest of the
 app never touches sentence-transformers directly.
 """
+
 import os
 from functools import lru_cache
 
@@ -31,5 +32,7 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 def embed_query(text: str) -> list[float]:
     """Embed a user query for search — uses bge's recommended query prefix."""
     model = get_embedding_model()
-    embedding = model.encode(BGE_QUERY_PREFIX + text, normalize_embeddings=True, show_progress_bar=False)
+    embedding = model.encode(
+        BGE_QUERY_PREFIX + text, normalize_embeddings=True, show_progress_bar=False
+    )
     return embedding.tolist()

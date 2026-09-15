@@ -45,7 +45,9 @@ def run_case(case: dict) -> dict:
     sender = f"eval_{case['id']}"
     start = time.perf_counter()
     try:
-        response = httpx.post(API_URL, params={"query": case["question"], "sender": sender}, timeout=45)
+        response = httpx.post(
+            API_URL, params={"query": case["question"], "sender": sender}, timeout=45
+        )
         response.raise_for_status()
         response_json = response.json()
         answer = response_json["answer"]
@@ -69,6 +71,7 @@ def run_case(case: dict) -> dict:
         "time_secs": elapsed_s,
     }
 
+
 def main():
     """Run all evaluation cases and save results."""
     cases = load_cases()
@@ -78,11 +81,7 @@ def main():
     results = []
 
     for index, case in enumerate(cases):
-        print(
-            f"[{case['id']}] "
-            f"({case['category']}) "
-            f"{case['question']}"
-        )
+        print(f"[{case['id']}] ({case['category']}) {case['question']}")
 
         result = run_case(case)
         results.append(result)
@@ -92,20 +91,14 @@ def main():
         else:
             print(f"  time={result['time_secs']}s")
             print(f"  expected: {result['expected_answer'][:100]}")
-            print(
-                f"  actual:   "
-                f"{(result['actual_answer'] or '')[:100]}"
-            )
+            print(f"  actual:   {(result['actual_answer'] or '')[:100]}")
 
         print()
 
         # Wait between cases to reduce API/rate-limit pressure.
         # No need to sleep after the final case.
         if index < len(cases) - 1:
-            print(
-                f"  Waiting {DELAY_BETWEEN_CASES}s "
-                "before next case...\n"
-            )
+            print(f"  Waiting {DELAY_BETWEEN_CASES}s before next case...\n")
             time.sleep(DELAY_BETWEEN_CASES)
 
     with open(RESULTS_PATH, "w") as f:

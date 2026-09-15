@@ -6,6 +6,7 @@ orchestrator), plus the real /chat endpoint.
 one labeled input box per field plus a true/false `stream` selector) and
 streams its reply when stream=true, or returns plain JSON otherwise.
 """
+
 import json
 from collections.abc import AsyncGenerator
 
@@ -59,10 +60,15 @@ async def chat(
     answer as a Server-Sent Events (SSE) stream of text chunks.
     """
     if stream:
-        return StreamingResponse(_event_stream(query, sender), media_type="text/event-stream")
+        return StreamingResponse(
+            _event_stream(query, sender), media_type="text/event-stream"
+        )
 
     result = await handle_turn(query, sender=sender)
-    return {"answer": result["answer"], "retrieved_context": result["retrieved_context"]}
+    return {
+        "answer": result["answer"],
+        "retrieved_context": result["retrieved_context"],
+    }
 
 
 async def _event_stream(query: str, sender: str) -> AsyncGenerator[str]:

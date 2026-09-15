@@ -1,6 +1,7 @@
 """
 Redis connection setup pure client management.
 """
+
 from functools import lru_cache
 
 import redis

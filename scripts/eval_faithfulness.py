@@ -4,6 +4,7 @@ retrieved_context each case actually captured during its real run —
 not a separate re-retrieval, which previously caused inconsistent
 verdicts on the same underlying facts.
 """
+
 import json
 import time
 from pathlib import Path
@@ -31,12 +32,16 @@ def main():
             print(f"[{r['id']}] skipped — no answer to judge")
             continue
         if r["category"] in SKIP_CATEGORIES:
-            print(f"[{r['id']}] skipped — {r['category']} is a refusal case, not fact-grounded")
+            print(
+                f"[{r['id']}] skipped — {r['category']} is a refusal case, not fact-grounded"
+            )
             continue
 
         context_chunks = r.get("retrieved_context", [])
         if not context_chunks:
-            print(f"[{r['id']}] skipped — no retrieved_context captured (Turn Handler short-circuit or empty retrieval)")
+            print(
+                f"[{r['id']}] skipped — no retrieved_context captured (Turn Handler short-circuit or empty retrieval)"
+            )
             continue
 
         context = "\n\n".join(context_chunks)

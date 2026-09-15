@@ -2,8 +2,12 @@ from app.agent.tools.destination_resolver import resolve_destination_name
 from app.db.chroma.client import get_collection
 
 COMPARISON_SECTIONS = [
-    "Overview", "Difficulty", "Duration", "Estimated Budget",
-    "Best Time to Visit", "Permits",
+    "Overview",
+    "Difficulty",
+    "Duration",
+    "Estimated Budget",
+    "Best Time to Visit",
+    "Permits",
 ]
 
 
@@ -35,6 +39,8 @@ def compare_destinations(destination_names: list[str]) -> dict:
         comparison[resolved] = sections
 
     if unresolved:
-        comparison["_unresolved"] = unresolved  # lets the agent tell the user which names it couldn't find
+        comparison["_unresolved"] = (
+            unresolved  # lets the agent tell the user which names it couldn't find
+        )
 
     return comparison

@@ -5,6 +5,7 @@ destinations, not a single factual lookup. Filters on frontmatter metadata
 (province, difficulty_level, type) rather than relying on semantic search alone,
 since these are categorical facts embeddings can miss or blur.
 """
+
 from app.db.chroma.client import get_collection
 
 
@@ -35,9 +36,15 @@ def filter_by_criteria(
     if not where_conditions:
         return []
 
-    where = where_conditions[0] if len(where_conditions) == 1 else {"$and": where_conditions}
+    where = (
+        where_conditions[0]
+        if len(where_conditions) == 1
+        else {"$and": where_conditions}
+    )
 
-    results = collection.get(where=where, limit=max_results * 5)  # over-fetch, we'll dedupe
+    results = collection.get(
+        where=where, limit=max_results * 5
+    )  # over-fetch, we'll dedupe
 
     seen_destinations = {}
     for metadata in results["metadatas"]:

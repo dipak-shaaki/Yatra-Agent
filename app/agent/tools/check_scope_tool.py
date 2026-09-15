@@ -9,6 +9,7 @@ bucket — goes through the LLM classifier, which generalizes far better
 than a hardcoded phrase list. On any classifier failure, this fails SAFE
 (refuses) rather than open, since this is a guardrail, not a UX nicety.
 """
+
 import json
 
 from app.components.groq.client import get_groq_client
@@ -17,7 +18,10 @@ from app.configs.agent_config import AGENT_MODEL
 # Only unambiguous, low-risk-of-false-positive fast-path matches.
 # Everything else is left to the LLM classifier below.
 OBVIOUS_OUT_OF_SCOPE = [
-    "usd to npr", "npr to usd", "exchange rate today", "currency rate today",
+    "usd to npr",
+    "npr to usd",
+    "exchange rate today",
+    "currency rate today",
 ]
 
 SCOPE_CHECK_PROMPT = """You are a scope classifier for a Nepal domestic tourism assistant covering \
@@ -46,19 +50,33 @@ def check_scope(query: str) -> dict:
 
     for keyword in OBVIOUS_OUT_OF_SCOPE:
         if keyword in query_lower:
-            return {"in_scope": False, "reason": f"Matched out-of-scope pattern: '{keyword}'"}
+            return {
+                "in_scope": False,
+                "reason": f"Matched out-of-scope pattern: '{keyword}'",
+            }
 
     client = get_groq_client()
     try:
         response = client.chat.completions.create(
             model=AGENT_MODEL,
-            messages=[{"role": "user", "content": SCOPE_CHECK_PROMPT.replace("{query}", query)}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": SCOPE_CHECK_PROMPT.replace("{query}", query),
+                }
+            ],
             temperature=0,
             max_tokens=300,
         )
         result = json.loads(response.choices[0].message.content)
-        return {"in_scope": bool(result.get("in_scope", True)), "reason": result.get("reason", "")}
+        return {
+            "in_scope": bool(result.get("in_scope", True)),
+            "reason": result.get("reason", ""),
+        }
     except Exception:
         # Fail safe: an out-of-scope query slipping through is worse than
         # an occasional over-cautious refusal, since this is a guardrail.
-        return {"in_scope": False, "reason": "Scope check unavailable — defaulting to refuse for safety"}
+        return {
+            "in_scope": False,
+            "reason": "Scope check unavailable — defaulting to refuse for safety",
+        }

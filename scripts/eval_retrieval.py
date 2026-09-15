@@ -8,6 +8,7 @@ from a wrong one using the same vocabulary — e.g. it would score "permits
 cost NPR 50,000" as grounded even if the source says NPR 10,000, as long as
 the words overlap. Faithfulness needs an LLM judge instead (built separately).
 """
+
 import json
 from pathlib import Path
 
@@ -33,7 +34,9 @@ def load_cases_with_source_docs() -> list[dict]:
     return cases
 
 
-def precision_recall_mrr_at_k(retrieved_source_files: list[str], expected_docs: list[str], k: int) -> dict:
+def precision_recall_mrr_at_k(
+    retrieved_source_files: list[str], expected_docs: list[str], k: int
+) -> dict:
     top_k = retrieved_source_files[:k]
     # retrieved chunk source_file looks like "manaslu_circuit.md" — expected_docs are "manaslu_circuit"
     top_k_stems = [f.replace(".md", "") for f in top_k]
@@ -63,22 +66,32 @@ def main():
 
         print(f"[{case['id']}] {case['question']}")
         print(f"  expected: {case['source_docs']}")
-        print(f"  retrieved (top 5): {[f.replace('.md', '') for f in retrieved_source_files[:5]]}")
+        print(
+            f"  retrieved (top 5): {[f.replace('.md', '') for f in retrieved_source_files[:5]]}"
+        )
 
         for k in K_VALUES:
-            metrics = precision_recall_mrr_at_k(retrieved_source_files, case["source_docs"], k)
+            metrics = precision_recall_mrr_at_k(
+                retrieved_source_files, case["source_docs"], k
+            )
             results_by_k[k].append(metrics)
-            print(f"  @{k}: precision={metrics['precision']:.2f} recall={metrics['recall']:.2f} rr={metrics['rr']:.2f}")
+            print(
+                f"  @{k}: precision={metrics['precision']:.2f} recall={metrics['recall']:.2f} rr={metrics['rr']:.2f}"
+            )
         print()
 
     print("=" * 60)
     print("AGGREGATE RESULTS")
     print("=" * 60)
     for k in K_VALUES:
-        avg_precision = sum(r["precision"] for r in results_by_k[k]) / len(results_by_k[k])
+        avg_precision = sum(r["precision"] for r in results_by_k[k]) / len(
+            results_by_k[k]
+        )
         avg_recall = sum(r["recall"] for r in results_by_k[k]) / len(results_by_k[k])
         mrr = sum(r["rr"] for r in results_by_k[k]) / len(results_by_k[k])
-        print(f"K={k}: Precision@{k}={avg_precision:.3f}  Recall@{k}={avg_recall:.3f}  MRR@{k}={mrr:.3f}")
+        print(
+            f"K={k}: Precision@{k}={avg_precision:.3f}  Recall@{k}={avg_recall:.3f}  MRR@{k}={mrr:.3f}"
+        )
 
 
 if __name__ == "__main__":

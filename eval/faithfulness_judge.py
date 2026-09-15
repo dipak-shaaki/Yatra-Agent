@@ -8,6 +8,7 @@ or fabricated detail requires actually comparing claims, not just word
 overlap, which is why we're not using the word-overlap approach common in
 generic RAG eval guides.
 """
+
 import json
 
 from app.components.groq.client import get_groq_client
@@ -39,10 +40,14 @@ def judge_faithfulness(context: str, answer: str) -> dict:
     try:
         response = client.chat.completions.create(
             model=AGENT_MODEL,
-            messages=[{
-                "role": "user",
-                "content": JUDGE_PROMPT.replace("{context}", context).replace("{answer}", answer),
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": JUDGE_PROMPT.replace("{context}", context).replace(
+                        "{answer}", answer
+                    ),
+                }
+            ],
             temperature=0,
             max_tokens=2000,
         )
@@ -53,4 +58,8 @@ def judge_faithfulness(context: str, answer: str) -> dict:
             "notes": result.get("notes", ""),
         }
     except Exception as e:
-        return {"faithful": None, "unsupported_claims": [], "notes": f"Judge failed: {e}"}
+        return {
+            "faithful": None,
+            "unsupported_claims": [],
+            "notes": f"Judge failed: {e}",
+        }

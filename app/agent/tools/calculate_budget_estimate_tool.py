@@ -2,7 +2,9 @@ from app.agent.tools.destination_resolver import resolve_destination_name
 from app.db.chroma.client import get_collection
 
 
-def calculate_budget_estimate(destination_name: str, num_days: int | None = None) -> dict:
+def calculate_budget_estimate(
+    destination_name: str, num_days: int | None = None
+) -> dict:
     """
     Returns the destination's raw budget estimate and typical time required,
     plus the user's requested num_days (if given) so the LLM can reason

@@ -2,6 +2,7 @@
 Structured logging helper: logs as
 [timestamp] [LEVEL] [name] event_name | key=value | key=value
 """
+
 import logging
 
 logger = logging.getLogger("yatra")

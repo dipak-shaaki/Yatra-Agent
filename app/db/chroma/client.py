@@ -2,6 +2,7 @@
 Chroma persistent client + collection access. Pure connection/storage setup —
 no business logic, no retrieval ranking (that lives in app/retrieval/).
 """
+
 from functools import lru_cache
 from typing import Any
 
@@ -26,6 +27,7 @@ def get_collection():
         metadata={"hnsw:space": "cosine"},
     )
 
+
 def delete_chunks_by_source_file(source_file: str) -> int:
     """Deletes all chunks belonging to one source file (e.g. 'bandipur.md'),
     used before re-upserting a destination so removed/renamed sections don't
@@ -36,6 +38,7 @@ def delete_chunks_by_source_file(source_file: str) -> int:
         collection.delete(ids=existing["ids"])
     return len(existing["ids"])
 
+
 def upsert_chunks(
     ids: list[str],
     embeddings: list[list[float]],
@@ -43,7 +46,9 @@ def upsert_chunks(
     metadatas: list[dict[str, Any]],
 ) -> None:
     collection = get_collection()
-    collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+    collection.upsert(
+        ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas
+    )
 
 
 def query_collection(

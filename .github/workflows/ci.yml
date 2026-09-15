@@ -36,13 +36,13 @@ jobs:
         run: uv sync --frozen --no-build
 
       - name: Lint with ruff
-        run: uv run --no-build ruff check .
+        run: uv run --no-build --locked ruff check .
 
       - name: Check formatting with ruff
-        run: uv run --no-build ruff format --check .
+        run: uv run --no-build --locked ruff format --check .
 
       - name: Compile all Python sources
-        run: uv run --no-build python -m compileall -q app scripts eval tests
+        run: uv run --no-build --locked python -m compileall -q app scripts eval tests
 
       - name: Run tests
-        run: uv run --no-build pytest tests/ -v
+        run: uv run --no-build --locked pytest tests/ -v

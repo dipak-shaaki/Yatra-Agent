@@ -31,7 +31,9 @@ async def lifespan(app: FastAPI):
     try:
         await asyncio.to_thread(get_redis_client().ping)
     except Exception as e:
-        _logger.warning("Redis unavailable at startup (%s) — session memory disabled", e)
+        _logger.warning(
+            "Redis unavailable at startup (%s) — session memory disabled", e
+        )
 
     yield
 

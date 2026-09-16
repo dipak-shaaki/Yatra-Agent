@@ -26,6 +26,7 @@ def test_openapi_docs_include_v1_routes() -> None:
 def test_documents_upsert_rejects_invalid_admin_token(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_API_KEY", "secret-token")
     from app.core.config import get_settings
+
     get_settings.cache_clear()
     try:
         from app.main import create_app

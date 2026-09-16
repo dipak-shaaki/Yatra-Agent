@@ -89,6 +89,8 @@ async def _event_stream(query: str, sender: str) -> AsyncGenerator[str]:
         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
     if turn_sink:
         yield (
-            "data: " + json.dumps({"retrieved_context": turn_sink[0].retrieved_context}) + "\n\n"
+            "data: "
+            + json.dumps({"retrieved_context": turn_sink[0].retrieved_context})
+            + "\n\n"
         )
     yield "data: [DONE]\n\n"

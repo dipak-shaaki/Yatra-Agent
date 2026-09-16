@@ -29,9 +29,7 @@ def _require_admin_token(
         raise HTTPException(status_code=403, detail="Invalid or missing admin token")
 
 
-@router.post(
-    "/documents/upsert", dependencies=[Depends(_require_admin_token)]
-)
+@router.post("/documents/upsert", dependencies=[Depends(_require_admin_token)])
 async def upsert_document_endpoint(request: DocumentUpsertRequest):
     try:
         return await asyncio.to_thread(

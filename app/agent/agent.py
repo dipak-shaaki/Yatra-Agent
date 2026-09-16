@@ -73,9 +73,7 @@ async def run_agent(user_query: str, sender: str) -> dict:
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(
-        await asyncio.to_thread(
-            get_history, sender, limit=CONVERSATION_HISTORY_LIMIT
-        )
+        await asyncio.to_thread(get_history, sender, limit=CONVERSATION_HISTORY_LIMIT)
     )
     messages.append({"role": "user", "content": user_query})
 
@@ -191,9 +189,7 @@ async def run_agent_stream(
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(
-        await asyncio.to_thread(
-            get_history, sender, limit=CONVERSATION_HISTORY_LIMIT
-        )
+        await asyncio.to_thread(get_history, sender, limit=CONVERSATION_HISTORY_LIMIT)
     )
     messages.append({"role": "user", "content": user_query})
 

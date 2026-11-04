@@ -9,6 +9,10 @@ that should not be duplicated anywhere else.
 import re
 import secrets
 
+from app.configs.agent_config import DESTINATION_NAMES
+
+_destination_count = len(DESTINATION_NAMES)
+
 GREETING_PATTERNS = [
     r"^hi+$",
     r"^hello+$",
@@ -33,9 +37,9 @@ COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in ALL_PATTERNS]
 
 TEMPLATED_REPLIES = {
     "greeting": [
-        "Hi! I can help you plan trips to 10 amazing Nepal destinations — treks, heritage towns, and pilgrimage sites. What would you like to know?",
+        f"Hi! I can help you plan trips to {_destination_count} amazing Nepal destinations — treks, heritage towns, and pilgrimage sites. What would you like to know?",
         "Hello! Ready to explore Nepal? Ask me about treks, permits, budgets, or best time to visit.",
-        "Hey there! I cover 10 great Nepal destinations. What are you curious about?",
+        f"Hey there! I cover {_destination_count} great Nepal destinations. What are you curious about?",
     ],
     "acknowledgment": [
         "You're welcome! Let me know if you have more questions about Nepal travel.",

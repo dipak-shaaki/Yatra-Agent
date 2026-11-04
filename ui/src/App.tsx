@@ -114,7 +114,7 @@ function App() {
       <main className="messages">
         {messages.length === 0 && (
           <div className="hint">
-            <div className="hint-title">Ask me about 10 Nepal destinations</div>
+            <div className="hint-title">Ask me about Nepal destinations</div>
             <div className="hint-sub">
               Treks, permits, budgets, culture, and best time to visit — try one
               of these:

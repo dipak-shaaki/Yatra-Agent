@@ -19,6 +19,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "redis>=8.1.0",
     "sentence-transformers>=6.0.1",
+    "torch",
     "uvicorn[standard]>=0.52.4",
 ]
 
@@ -37,8 +38,19 @@ dev = [
 [tool.uv]
 package = false
 
+# CPU-only PyTorch: this project runs on Intel CPUs, so avoid the CUDA wheels
+# and their multi-GB NVIDIA dependencies that PyPI ships for Linux by default.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
 [tool.ruff.lint]
 ignore = ["BLE001"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+testpaths = ["tests"]

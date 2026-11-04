@@ -4,6 +4,9 @@ from app.agent.tools.compare_destinations_tool import compare_destinations
 from app.agent.tools.filter_by_criteria_tool import filter_by_criteria
 from app.agent.tools.get_conversation_context_tool import get_conversation_context
 from app.agent.tools.search_destinations_tool import search_destinations
+from app.configs.agent_config import DESTINATION_NAMES
+
+_destination_count = len(DESTINATION_NAMES)
 
 TOOL_SCHEMAS = [
     {
@@ -12,7 +15,7 @@ TOOL_SCHEMAS = [
             "name": "check_scope",
             "description": (
                 "Determines if a user query is within Yatra's domain "
-                "(the 10 documented Nepal destinations). Run this early "
+                f"(the {_destination_count} documented Nepal destinations). Run this early "
                 "on every real query before other tools."
             ),
             "parameters": {

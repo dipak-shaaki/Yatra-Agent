@@ -32,7 +32,7 @@ In scope: questions about these destinations' routes, permits, budgets, difficul
 visit, culture, or general Nepal trekking/travel planning relevant to them. This includes discovery \
 questions that mention a NEARBY city or landmark only as a reference point for filtering or \
 location context (e.g. "easy treks near Pokhara", "destinations close to Kathmandu") — these ARE \
-in scope, since the answer should draw from the 10 covered destinations, even though the reference \
+in scope, since the answer should draw from the {_destination_count} covered destinations, even though the reference \
 city itself isn't one of them.
 
 Out of scope: live weather/currency data, actual bookings/reservations, medical/emergency advice, \

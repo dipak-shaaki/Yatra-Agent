@@ -1,4 +1,4 @@
-"""Groq API client setup — connection only, no business/prompt logic here."""
+"""Groq API client setup"""
 
 from functools import lru_cache
 

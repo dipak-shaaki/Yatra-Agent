@@ -29,6 +29,10 @@ from app.utils.logger import log_event
 
 _destinations = ", ".join(DESTINATION_NAMES)
 _destination_count = len(DESTINATION_NAMES)
+AGENT_ERROR_REPLY = (
+    "Sorry, I'm having trouble processing that request right now. "
+    "Could you rephrase it?"
+)
 
 SYSTEM_PROMPT = f"""You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
 exactly {_destination_count} destinations: {_destinations}.
@@ -166,7 +170,7 @@ async def run_agent(user_query: str, sender: str) -> dict:
         total_time_secs=total_s,
     )
     return {
-        "answer": "Sorry, I'm having trouble processing that request right now. Could you rephrase it?",
+        "answer": AGENT_ERROR_REPLY,
         "retrieved_context": retrieved_context,
     }
 
@@ -291,4 +295,4 @@ async def run_agent_stream(
         max_iterations=MAX_TOOL_ITERATIONS,
         total_time_secs=total_s,
     )
-    yield "Sorry, I'm having trouble processing that request right now. Could you rephrase it?"
+    yield AGENT_ERROR_REPLY

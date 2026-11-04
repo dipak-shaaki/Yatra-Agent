@@ -10,17 +10,19 @@ AGENT_MODEL = "openai/gpt-oss-20b"
 # In-scope destinations — single source of truth. Both the system prompt and
 # the shared UNCLEAR_REPLY are built from this, so adding a destination
 # updates every copy.
+# These must match the `name` field in each corpus document's frontmatter,
+# because tools use them as exact Chroma metadata filters.
 DESTINATION_NAMES = (
     "Manaslu Circuit",
-    "Annapurna Base Camp",
+    "Annapurna Base Camp (ABC)",
     "Mardi Himal",
-    "Kori",
+    "Kori (Kori Danda)",
     "Badimalika",
     "Bandipur",
     "Panauti",
     "Gorkha",
     "Rara Lake",
-    "Tansen/Palpa",
+    "Tansen (Palpa)",
 )
 
 # Agent loop

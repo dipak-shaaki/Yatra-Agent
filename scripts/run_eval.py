@@ -44,7 +44,9 @@ def run_case(case: dict) -> dict:
     start = time.perf_counter()
     try:
         response = httpx.post(
-            API_URL, params={"query": case["question"], "sender": sender}, timeout=45
+            API_URL,
+            params={"query": case["question"], "sender": sender},
+            timeout=HTTP_TIMEOUT,
         )
         response.raise_for_status()
         response_json = response.json()

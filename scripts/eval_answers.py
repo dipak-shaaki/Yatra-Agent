@@ -139,6 +139,7 @@ def main() -> int:
 
     scored = [j for j in judged if j["verdicts"] is not None]
     latencies = [j["time_secs"] for j in scored if j.get("time_secs")]
+    llm_calls = [j["llm_calls"] for j in scored if j.get("llm_calls") is not None]
     by_category: dict[str, list[bool]] = {}
     for j in scored:
         by_category.setdefault(j["category"], []).append(j["passed"])
@@ -161,6 +162,11 @@ def main() -> int:
         f"  latency:    p50={_percentile(latencies, 50):.1f}s"
         f" p95={_percentile(latencies, 95):.1f}s"
     )
+    if llm_calls:
+        print(
+            f"  llm calls:  mean={sum(llm_calls) / len(llm_calls):.1f}"
+            f" max={max(llm_calls)} per turn"
+        )
     errors = [j for j in judged if j["verdicts"] is None]
     if errors:
         print(f"\n  WARNING: {len(errors)} cases produced no answer at runtime")

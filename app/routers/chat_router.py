@@ -125,6 +125,7 @@ async def chat(
     if get_settings().expose_eval_context:
         payload["retrieved_context"] = result["retrieved_context"]
         payload["tools_called"] = result["tools_called"]
+        payload["llm_calls"] = result["llm_calls"]
     return payload
 
 
@@ -148,6 +149,7 @@ async def _event_stream(query: str, sender: str) -> AsyncGenerator[str]:
                 {
                     "retrieved_context": turn.retrieved_context,
                     "tools_called": turn.tools_called,
+                    "llm_calls": turn.llm_calls,
                 }
             )
             + "\n\n"

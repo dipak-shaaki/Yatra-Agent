@@ -12,6 +12,7 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from app.core.config import get_settings
 from app.data_ingestion.chunker import SECTION_SPLIT_RE, chunk_corpus_dir
@@ -50,7 +51,7 @@ def _load_destinations(corpus_dir: str) -> tuple[Destination, ...]:
     for md_file in sorted(Path(corpus_dir).glob("*.md")):
         raw = md_file.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(raw)
-        data = {
+        data: dict[str, Any] = {
             k: tuple(v) if isinstance(v, list) else v
             for k, v in frontmatter.model_dump().items()
         }

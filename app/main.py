@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from app.components.redis.client import get_redis_client
 from app.core.config import get_settings
@@ -53,6 +53,28 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "app": settings.app_name}
+
+    @app.get("/ready")
+    async def ready():
+        """Readiness for orchestration: 200 only when both backing stores
+        answer. /health is liveness (always ok once booted); this catches a
+        Redis/Chroma that went down after startup."""
+        checks: dict[str, bool] = {}
+        try:
+            await asyncio.to_thread(get_redis_client().ping)
+            checks["redis"] = True
+        except Exception:
+            checks["redis"] = False
+        try:
+            await asyncio.to_thread(get_collection)
+            checks["chroma"] = True
+        except Exception:
+            checks["chroma"] = False
+        if all(checks.values()):
+            return {"status": "ready", "checks": checks}
+        raise HTTPException(
+            status_code=503, detail={"status": "not ready", "checks": checks}
+        )
 
     return app
 

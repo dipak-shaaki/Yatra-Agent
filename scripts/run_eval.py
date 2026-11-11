@@ -57,11 +57,13 @@ def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) ->
         answer = body.get("answer")
         retrieved_context = body.get("retrieved_context", [])
         tools_called = body.get("tools_called", [])
+        llm_calls = body.get("llm_calls")
         error = None
     except Exception as e:
         answer = None
         retrieved_context = []
         tools_called = []
+        llm_calls = None
         error = str(e)
     elapsed_s = round(time.perf_counter() - start, 2)
 
@@ -77,6 +79,7 @@ def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) ->
         "actual_answer": answer,
         "retrieved_context": retrieved_context,
         "tools_called": tools_called,
+        "llm_calls": llm_calls,
         "error": error,
         "time_secs": elapsed_s,
     }

@@ -92,6 +92,7 @@ def test_stream_reassembles_tool_calls_and_captures_result(monkeypatch) -> None:
     assert chunks == ["Bandipur is ", "in Gandaki."]
     assert result.answer == "Bandipur is in Gandaki."
     assert result.tools_called == ["filter_by_criteria"]
+    assert result.llm_calls == 2  # tool-call round + final-answer round
 
     # The second LLM round received the tool's output as a tool message.
     second_round_messages = fake.chat.completions.calls[1]["messages"]
@@ -113,6 +114,7 @@ def test_empty_final_content_yields_error_reply(monkeypatch) -> None:
     assert chunks == [AGENT_ERROR_REPLY]
     assert result.answer == AGENT_ERROR_REPLY
     assert result.tools_called == []
+    assert result.llm_calls == 1
 
 
 def test_max_iterations_ends_with_error_reply(monkeypatch) -> None:
@@ -145,3 +147,4 @@ def test_max_iterations_ends_with_error_reply(monkeypatch) -> None:
     assert (
         fake.chat.completions.calls == agent_module.get_settings().max_tool_iterations
     )
+    assert result.llm_calls == agent_module.get_settings().max_tool_iterations

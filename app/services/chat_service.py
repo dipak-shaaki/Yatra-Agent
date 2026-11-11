@@ -15,18 +15,19 @@ _graph = TurnGraph()
 
 
 def _log_turn(turn: Turn) -> None:
-    llm_calls = (
-        0 if turn.stage == "stage1" else (1 if turn.stage == "stage2" else "full_agent")
-    )
     log_event(
-        "turn_handled", stage=turn.stage, category=turn.category, llm_calls=llm_calls
+        "turn_handled",
+        stage=turn.stage,
+        category=turn.category,
+        llm_calls=turn.llm_calls,
     )
 
 
 async def handle_turn(query: str, sender: str) -> dict:
     """Returns {"answer": str, "retrieved_context": list[str], "tools_called":
-    list[str]}. Short-circuit paths (stage1/stage2 filler/unclear/out_of_scope)
-    return empty context and tools, since no retrieval happened for those."""
+    list[str], "llm_calls": int}. Short-circuit paths (stage1/stage2
+    filler/unclear/out_of_scope) return empty context and tools, since no
+    retrieval happened for those."""
     turn = Turn(query=query, sender=sender)
     await _graph.run(turn)
     _log_turn(turn)
@@ -34,6 +35,7 @@ async def handle_turn(query: str, sender: str) -> dict:
         "answer": turn.reply,
         "retrieved_context": turn.retrieved_context,
         "tools_called": turn.tools_called,
+        "llm_calls": turn.llm_calls,
     }
 
 

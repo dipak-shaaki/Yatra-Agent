@@ -81,4 +81,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # groq_api_key is required but arrives via the environment / .env file
+    # (pydantic-settings), which static analysis cannot see — hence the
+    # silenced call-arg diagnostic below.
+    return Settings()  # type: ignore[call-arg]

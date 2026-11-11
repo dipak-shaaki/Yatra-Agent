@@ -20,7 +20,7 @@ def _flatten_metadata(
     None values are dropped entirely rather than stringified to "None",
     so absent attributes never pollute the stored metadata.
     """
-    flat = {}
+    flat: dict[str, str | int | float | bool] = {}
     for key, value in frontmatter.items():
         if value is None:
             continue

@@ -220,6 +220,14 @@ aliases, province, district, tags, difficulty, days_min/max, budget bounds +
 `budget_per_day`, permits, etc.) followed by `##`-section bodies. 10
 destinations, curated for domestic tourism.
 
+**Provenance:** the corpus is authored and maintained in this repository —
+there is no automated ingestion from external sources. Every document
+carries a `last_updated` date in its frontmatter, and budget figures are
+rough domestic-traveler estimates (stated as such in the corpus text
+itself), which is why the budget tool marks scaled or out-of-range
+estimates as approximations. Cite the file and date when answering
+(§2.3 system prompt), so permit/price staleness is visible to the user.
+
 ### 4.2 Typed metadata (`app/data_ingestion/corpus_meta.py`)
 
 Frontmatter is parsed into a **pydantic model** (`Destination`) — malformed

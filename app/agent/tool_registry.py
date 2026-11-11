@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from app.agent.tools.calculate_budget_estimate_tool import calculate_budget_estimate
 from app.agent.tools.compare_destinations_tool import compare_destinations
 from app.agent.tools.filter_by_criteria_tool import filter_by_criteria
@@ -128,7 +130,7 @@ def _tool_schemas() -> list[dict]:
 
 
 # Maps tool name (as Groq will refer to it) -> actual callable
-TOOL_DISPATCH = {
+TOOL_DISPATCH: dict[str, Callable[..., dict | list]] = {
     "search_destinations": search_destinations,
     "filter_by_criteria": filter_by_criteria,
     "compare_destinations": compare_destinations,

@@ -54,6 +54,9 @@ jobs:
       - name: Check formatting with ruff
         run: uv run --no-build --locked ruff format --check .
 
+      - name: Type-check with mypy
+        run: uv run --no-build --locked mypy
+
       - name: Compile all Python sources
         run: uv run --no-build --locked python -m compileall -q app scripts eval tests
 

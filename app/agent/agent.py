@@ -18,6 +18,7 @@ import json
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.agent.tool_registry import call_tool, get_tool_schemas
 from app.components.groq.client import get_async_groq_client, reasoning_params
@@ -39,6 +40,7 @@ class AgentResult:
     answer: str = ""
     retrieved_context: list[str] = field(default_factory=list)
     tools_called: list[str] = field(default_factory=list)
+    llm_calls: int = 0
 
 
 def _system_prompt() -> str:
@@ -117,7 +119,10 @@ async def run_agent_stream(
     run = result if result is not None else AgentResult()
     settings = get_settings()
     turn_start = time.perf_counter()
-    messages = [{"role": "system", "content": _system_prompt()}]
+    # Heterogeneous message dicts (system/user/assistant-with-tool_calls/tool);
+    # Groq's TypedDict param union cannot express this shape (silenced at the
+    # create() call below).
+    messages: list[dict[str, Any]] = [{"role": "system", "content": _system_prompt()}]
     messages.extend(
         await asyncio.to_thread(
             get_history, sender, limit=settings.conversation_history_limit
@@ -129,7 +134,10 @@ async def run_agent_stream(
 
     for iteration in range(settings.max_tool_iterations):
         llm_start = time.perf_counter()
-        stream = await client.chat.completions.create(
+        # Groq's TypedDict param union cannot express our heterogeneous
+        # message dicts, and the unpacked reasoning_params dict defeats
+        # overload matching — runtime accepts both fine.
+        stream = await client.chat.completions.create(  # type: ignore[call-overload]
             model=settings.agent_model,
             messages=messages,
             tools=get_tool_schemas(),
@@ -138,6 +146,7 @@ async def run_agent_stream(
             max_tokens=settings.final_answer_max_tokens,
             **reasoning_params(settings.agent_model, settings.reasoning_effort),
         )
+        run.llm_calls += 1
 
         content_buffer = ""
         tool_calls_buffer: dict[int, dict] = {}

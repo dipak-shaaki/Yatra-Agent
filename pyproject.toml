@@ -30,6 +30,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",
+    "mypy>=2.4.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.7",
@@ -50,6 +51,12 @@ torch = [{ index = "pytorch-cpu" }]
 
 [tool.ruff.lint]
 ignore = ["BLE001"]
+
+[tool.mypy]
+# Scoped to app/ — the importable library. scripts/, eval/ and tests/ are
+# thin drivers and harnesses, deliberately left unchecked.
+files = ["app"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

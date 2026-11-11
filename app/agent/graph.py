@@ -59,6 +59,7 @@ class Turn:
     reply: str | None = None
     retrieved_context: list[str] = field(default_factory=list)
     tools_called: list[str] = field(default_factory=list)
+    llm_calls: int = 0
     stage: str | None = None
     short_circuited: bool = False
 
@@ -99,6 +100,7 @@ async def _stage2_node(turn: Turn, last_assistant_message: str) -> None:
     """LLM classifier for what Stage 1's regex did not catch. Also enforces
     the scope guardrail — out_of_scope never reaches the agent loop."""
     turn.stage = "stage2"
+    turn.llm_calls += 1  # the classification call
     turn.category = await classify_stage2(
         turn.query, last_assistant_message=last_assistant_message
     )
@@ -132,6 +134,7 @@ async def _agent_stream_node(turn: Turn) -> AsyncGenerator[str]:
     turn.reply = result.answer
     turn.retrieved_context = result.retrieved_context
     turn.tools_called = result.tools_called
+    turn.llm_calls += result.llm_calls
     await _append_turn_messages(turn.sender, turn.query, turn.reply)
 
 
@@ -188,7 +191,8 @@ class TurnGraph:
             last_assistant_message = await self._last_assistant_message(turn.sender)
             await self._stage2(turn, last_assistant_message)
         if turn.short_circuited:
-            yield turn.reply
+            # Short-circuit nodes always set reply before flagging.
+            yield turn.reply or ""
             return
         async for chunk in self._agent_stream(turn):
             yield chunk

@@ -1,30 +1,53 @@
-from app.data_ingestion.corpus_meta import resolve_destination
-from app.db.chroma.client import get_collection
+"""
+Budget estimates with the arithmetic done in code: the corpus stores
+numeric budget ranges (per-day or whole-trip) plus typical day ranges, so
+scaling to a requested trip length is computed here instead of improvised
+by the LLM from formatted text.
+"""
+
+from app.data_ingestion.corpus_meta import get_destinations, resolve_destination
 
 
 def calculate_budget_estimate(
     destination_name: str, num_days: int | None = None
 ) -> dict:
-    """
-    Returns the destination's raw budget estimate and typical time required,
-    plus the user's requested num_days (if given) so the LLM can reason
-    about whether/how to scale the estimate — rather than this tool
-    fabricating a multiplied total from inconsistently formatted text.
-    """
     resolved = resolve_destination(destination_name)
     if not resolved:
         return {"error": f"Unknown destination: '{destination_name}'"}
+    if num_days is not None and num_days < 1:
+        return {"error": "num_days must be a positive integer"}
 
-    collection = get_collection()
-    results = collection.get(where={"name": {"$eq": resolved}}, limit=1)
+    dest = next(d for d in get_destinations() if d.name == resolved)
 
-    if not results["ids"]:
-        return {"error": f"No data found for: '{resolved}'"}
-
-    metadata = results["metadatas"][0]
-    return {
-        "destination": resolved,
-        "estimated_budget_npr": metadata.get("estimated_budget_npr"),
-        "typical_time_required": metadata.get("time_required"),
+    result = {
+        "destination": dest.name,
+        "estimated_budget_npr": dest.estimated_budget_npr,
+        "typical_time_required": dest.time_required,
+        "budget_per_day": dest.budget_per_day,
         "requested_num_days": num_days,
     }
+
+    if num_days is None:
+        result["typical_budget_npr"] = [dest.budget_min_npr, dest.budget_max_npr]
+        return result
+
+    if dest.budget_per_day:
+        est_min = dest.budget_min_npr * num_days
+        est_max = dest.budget_max_npr * num_days
+        basis = "per-day budget multiplied by the requested number of days"
+    elif dest.days_min <= num_days <= dest.days_max:
+        est_min, est_max = dest.budget_min_npr, dest.budget_max_npr
+        basis = "the corpus estimate already covers this trip length"
+    else:
+        # shortcut: linear extrapolation outside the typical range; upgrade
+        # to per-section cost modelling if the corpus ever gains one.
+        est_min = round(dest.budget_min_npr * num_days / dest.days_max)
+        est_max = round(dest.budget_max_npr * num_days / dest.days_min)
+        basis = (
+            "rough proportional scaling from the corpus's typical "
+            f"{dest.days_min}-{dest.days_max} day range"
+        )
+
+    result["estimated_total_npr"] = [est_min, est_max]
+    result["basis"] = basis
+    return result

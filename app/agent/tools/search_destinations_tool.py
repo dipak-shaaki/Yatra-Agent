@@ -8,7 +8,8 @@ from app.retrieval.hybrid_retriever import hybrid_search
 
 def search_destinations(query: str, n_results: int = 5) -> list[dict]:
     """Return retrieved chunks as [{"destination", "section", "text"}] for
-    the LLM's context — internal scores and ids are dropped on purpose."""
+    the LLM's context — internal scores and ids are dropped on purpose.
+    source_file and last_updated ride along so answers can cite sources."""
     results = hybrid_search(query, n_results=n_results)
     return [
         {
@@ -16,6 +17,8 @@ def search_destinations(query: str, n_results: int = 5) -> list[dict]:
                 "name", r["metadata"].get("source_file", "unknown")
             ),
             "section": r["metadata"].get("section_title", ""),
+            "source_file": r["metadata"].get("source_file", ""),
+            "last_updated": r["metadata"].get("last_updated", ""),
             "text": r["text"],
         }
         for r in results

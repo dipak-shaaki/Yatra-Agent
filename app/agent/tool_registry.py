@@ -4,157 +4,177 @@ from app.agent.tools.compare_destinations_tool import compare_destinations
 from app.agent.tools.filter_by_criteria_tool import filter_by_criteria
 from app.agent.tools.get_conversation_context_tool import get_conversation_context
 from app.agent.tools.search_destinations_tool import search_destinations
-from app.data_ingestion.corpus_meta import destination_names
+from app.data_ingestion.corpus_meta import get_destinations
 
-_destination_count = len(destination_names())
 
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "check_scope",
-            "description": (
-                "Determines if a user query is within Yatra's domain "
-                f"(the {_destination_count} documented Nepal destinations). Run this early "
-                "on every real query before other tools."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The user's query to check",
+def _corpus_enums() -> tuple[list[str], list[int], list[str]]:
+    """Provinces, difficulty levels and type tags actually present in the
+    corpus — the tool schemas advertise exactly what the tools can match."""
+    destinations = get_destinations()
+    provinces = sorted({d.province for d in destinations})
+    difficulties = sorted({d.difficulty for d in destinations})
+    tags = sorted({tag for d in destinations for tag in d.tags})
+    return provinces, difficulties, tags
+
+
+def _tool_schemas() -> list[dict]:
+    provinces, difficulties, tags = _corpus_enums()
+    _destination_count = len(get_destinations())
+
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "check_scope",
+                "description": (
+                    "Determines if a user query is within Yatra's domain "
+                    f"(the {_destination_count} documented Nepal destinations). Run this early "
+                    "on every real query before other tools."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The user's query to check",
+                        },
                     },
+                    "required": ["query"],
                 },
-                "required": ["query"],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "filter_by_criteria",
-            "description": (
-                "Find destinations matching specific criteria like province, "
-                "difficulty level, or type (trek/pilgrimage/heritage town). "
-                "Use for discovery questions like 'easy treks near Pokhara' or "
-                "'destinations in Gandaki province', not single-destination lookups."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "province": {
-                        "type": "string",
-                        "description": "e.g. Gandaki, Bagmati, Karnali, Lumbini, Sudurpashchim",
+        {
+            "type": "function",
+            "function": {
+                "name": "filter_by_criteria",
+                "description": (
+                    "Find destinations matching specific criteria like province, "
+                    "difficulty level, or type (trek/pilgrimage/heritage town). "
+                    "Use for discovery questions like 'easy treks near Pokhara' or "
+                    "'destinations in Gandaki province', not single-destination lookups."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "province": {
+                            "type": "string",
+                            "enum": provinces,
+                            "description": "Nepali province the destination lies in",
+                        },
+                        "difficulty_level": {
+                            "type": "integer",
+                            "enum": difficulties,
+                            "description": (
+                                "Difficulty on a 1-5 scale (1 = easy, 5 = very hard); "
+                                "matches adjacent levels too"
+                            ),
+                        },
+                        "type": {
+                            "type": "string",
+                            "enum": tags,
+                            "description": "Kind of destination",
+                        },
                     },
-                    "difficulty_level": {
-                        "type": "string",
-                        "description": "e.g. easy, moderate, hard",
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "e.g. trek, pilgrimage, hill town, heritage village, lake",
-                    },
+                    "required": [],
                 },
-                "required": [],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_destinations",
-            "description": (
-                "Hybrid search (semantic + keyword) over the destination corpus. "
-                "Use for direct factual questions about a single destination or topic "
-                "(e.g. permits, budget, best time to visit, difficulty)."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search query"},
-                    "n_results": {
-                        "type": "integer",
-                        "description": "Number of chunks to retrieve",
-                        "default": 5,
+        {
+            "type": "function",
+            "function": {
+                "name": "search_destinations",
+                "description": (
+                    "Hybrid search (semantic + keyword) over the destination corpus. "
+                    "Use for direct factual questions about a single destination or topic "
+                    "(e.g. permits, budget, best time to visit, difficulty)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                        "n_results": {
+                            "type": "integer",
+                            "description": "Number of chunks to retrieve",
+                            "default": 5,
+                        },
                     },
+                    "required": ["query"],
                 },
-                "required": ["query"],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_destinations",
-            "description": (
-                "Compare 2 or more named destinations side by side across "
-                "difficulty, duration, budget, best time to visit, and permits. "
-                "Use for 'X vs Y' style questions."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destination_names": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": (
-                            "Exact destination names, e.g. 'Manaslu Circuit', "
-                            "'Annapurna Base Camp (ABC)', 'Rara Lake'"
-                        ),
+        {
+            "type": "function",
+            "function": {
+                "name": "compare_destinations",
+                "description": (
+                    "Compare 2 or more named destinations side by side across "
+                    "difficulty, duration, budget, best time to visit, and permits. "
+                    "Use for 'X vs Y' style questions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "destination_names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "Exact destination names, e.g. 'Manaslu Circuit', "
+                                "'Annapurna Base Camp (ABC)', 'Rara Lake'"
+                            ),
+                        },
                     },
+                    "required": ["destination_names"],
                 },
-                "required": ["destination_names"],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate_budget_estimate",
-            "description": (
-                "Get budget estimate info for a destination, optionally scaled "
-                "to a specific number of days. Use for cost/budget questions."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destination_name": {"type": "string"},
-                    "num_days": {
-                        "type": "integer",
-                        "description": "Trip length in days, if specified",
+        {
+            "type": "function",
+            "function": {
+                "name": "calculate_budget_estimate",
+                "description": (
+                    "Get budget estimate info for a destination, optionally scaled "
+                    "to a specific number of days. Use for cost/budget questions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "destination_name": {"type": "string"},
+                        "num_days": {
+                            "type": "integer",
+                            "description": "Trip length in days, if specified",
+                        },
                     },
+                    "required": ["destination_name"],
                 },
-                "required": ["destination_name"],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_conversation_context",
-            "description": (
-                "Retrieve recent conversation history for this session. Use when "
-                "the current query references something from earlier in the "
-                "conversation (e.g. 'that place', 'the one you mentioned', 'it')."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sender": {
-                        "type": "string",
-                        "description": "Session/user identifier",
+        {
+            "type": "function",
+            "function": {
+                "name": "get_conversation_context",
+                "description": (
+                    "Retrieve recent conversation history for this session. Use when "
+                    "the current query references something from earlier in the "
+                    "conversation (e.g. 'that place', 'the one you mentioned', 'it')."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sender": {
+                            "type": "string",
+                            "description": "Session/user identifier",
+                        },
+                        "num_turns": {
+                            "type": "integer",
+                            "description": "How many recent messages to retrieve",
+                        },
                     },
-                    "num_turns": {
-                        "type": "integer",
-                        "description": "How many recent messages to retrieve",
-                    },
+                    "required": ["sender"],
                 },
-                "required": ["sender"],
             },
         },
-    },
-]
+    ]
+
 
 # Maps tool name (as Groq will refer to it) -> actual callable
 TOOL_DISPATCH = {
@@ -168,8 +188,12 @@ TOOL_DISPATCH = {
 
 
 def get_tool_schemas() -> list[dict]:
-    """Returns the full schema list to pass to Groq's `tools` parameter."""
-    return TOOL_SCHEMAS
+    """Returns the full schema list to pass to Groq's `tools` parameter.
+
+    Built per call from the current corpus, so a document upsert that adds a
+    province or tag is advertised immediately without a process restart.
+    """
+    return _tool_schemas()
 
 
 def call_tool(tool_name: str, **kwargs) -> dict | list:

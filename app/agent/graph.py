@@ -26,15 +26,18 @@ from app.agent.nodes.loop_breaker_node import (
 from app.agent.nodes.stage1_rules_node import classify_stage1, get_templated_reply
 from app.agent.nodes.stage2_classifier_node import classify_stage2
 from app.components.redis.session_store import append_message, get_history
-from app.configs.agent_config import DESTINATION_NAMES
+from app.data_ingestion.corpus_meta import destination_names
 
-_unclear_destinations = ", ".join(DESTINATION_NAMES)
-_unclear_count = len(DESTINATION_NAMES)
-UNCLEAR_REPLY = (
-    "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
-    f"best time to visit for {_unclear_count} Nepal destinations — {_unclear_destinations}. "
-    "What would you like to know?"
-)
+
+def unclear_reply() -> str:
+    """Built per call so an upsert that adds/removes destinations is picked
+    up without a process restart."""
+    names = destination_names()
+    return (
+        "I'm not sure I caught that! I can help with treks, permits, budgets, culture, or "
+        f"best time to visit for {len(names)} Nepal destinations — {', '.join(names)}. "
+        "What would you like to know?"
+    )
 
 
 @dataclass
@@ -94,7 +97,7 @@ async def _stage2_node(turn: Turn, last_assistant_message: str) -> None:
         turn.short_circuited = True
         await _append_turn_messages(turn.sender, turn.query, turn.reply)
     elif turn.category == "unclear":
-        turn.reply = UNCLEAR_REPLY
+        turn.reply = unclear_reply()
         turn.short_circuited = True
         await _append_turn_messages(turn.sender, turn.query, turn.reply)
     else:

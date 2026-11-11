@@ -11,7 +11,8 @@ is worse than an occasional over-cautious refusal.
 import json
 
 from app.components.groq.client import get_groq_client
-from app.configs.agent_config import AGENT_MODEL, DESTINATION_NAMES
+from app.core.config import get_settings
+from app.data_ingestion.corpus_meta import destination_names
 
 # Only unambiguous, low-risk-of-false-positive fast-path matches.
 # Everything else is left to the LLM classifier below.
@@ -22,8 +23,8 @@ OBVIOUS_OUT_OF_SCOPE = [
     "currency rate today",
 ]
 
-_destinations = ", ".join(DESTINATION_NAMES)
-_destination_count = len(DESTINATION_NAMES)
+_destinations = ", ".join(destination_names())
+_destination_count = len(destination_names())
 
 SCOPE_CHECK_PROMPT = f"""You are a scope classifier for a Nepal domestic tourism assistant covering \
 exactly {_destination_count} destinations: {_destinations}.
@@ -56,9 +57,10 @@ def check_scope(query: str) -> dict:
             }
 
     client = get_groq_client()
+    settings = get_settings()
     try:
         response = client.chat.completions.create(
-            model=AGENT_MODEL,
+            model=settings.agent_model,
             messages=[
                 {
                     "role": "user",
@@ -66,7 +68,7 @@ def check_scope(query: str) -> dict:
                 }
             ],
             temperature=0,
-            max_tokens=300,
+            max_tokens=settings.classifier_max_tokens,
         )
         result = json.loads(response.choices[0].message.content)
         return {

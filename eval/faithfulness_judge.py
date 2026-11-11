@@ -9,7 +9,7 @@ comparing claims, not word overlap.
 import json
 
 from app.components.groq.client import get_async_groq_client
-from app.configs.agent_config import AGENT_MODEL
+from app.core.config import get_settings
 
 JUDGE_PROMPT = """You are a strict fact-checker. Given RETRIEVED CONTEXT and an ANSWER, \
 identify any factual claims in the ANSWER that are NOT supported by the CONTEXT.
@@ -36,7 +36,7 @@ async def judge_faithfulness(context: str, answer: str) -> dict:
     client = get_async_groq_client()
     try:
         response = await client.chat.completions.create(
-            model=AGENT_MODEL,
+            model=get_settings().judge_model,
             messages=[
                 {
                     "role": "user",

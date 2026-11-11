@@ -18,23 +18,21 @@ from collections.abc import AsyncGenerator
 from app.agent.tool_registry import call_tool, get_tool_schemas
 from app.components.groq.client import get_async_groq_client
 from app.components.redis.session_store import get_history
-from app.configs.agent_config import (
-    AGENT_MODEL,
-    CONVERSATION_HISTORY_LIMIT,
-    DESTINATION_NAMES,
-    FINAL_ANSWER_MAX_TOKENS,
-    MAX_TOOL_ITERATIONS,
-)
+from app.core.config import get_settings
+from app.data_ingestion.corpus_meta import destination_names
 from app.utils.logger import log_event
 
-_destinations = ", ".join(DESTINATION_NAMES)
-_destination_count = len(DESTINATION_NAMES)
 AGENT_ERROR_REPLY = (
     "Sorry, I'm having trouble processing that request right now. "
     "Could you rephrase it?"
 )
 
-SYSTEM_PROMPT = f"""You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
+
+def _system_prompt() -> str:
+    names = destination_names()
+    _destinations = ", ".join(names)
+    _destination_count = len(names)
+    return f"""You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
 exactly {_destination_count} destinations: {_destinations}.
 
 Always call check_scope first on any real question to confirm it's within your domain. If in \
@@ -74,24 +72,27 @@ async def run_agent(user_query: str, sender: str) -> dict:
     scripts can judge faithfulness against what the agent really saw,
     not a fresh, potentially different retrieval.
     """
+    settings = get_settings()
     turn_start = time.perf_counter()
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _system_prompt()}]
     messages.extend(
-        await asyncio.to_thread(get_history, sender, limit=CONVERSATION_HISTORY_LIMIT)
+        await asyncio.to_thread(
+            get_history, sender, limit=settings.conversation_history_limit
+        )
     )
     messages.append({"role": "user", "content": user_query})
 
     client = get_async_groq_client()
     retrieved_context: list[str] = []
 
-    for iteration in range(MAX_TOOL_ITERATIONS):
+    for iteration in range(settings.max_tool_iterations):
         llm_start = time.perf_counter()
         response = await client.chat.completions.create(
-            model=AGENT_MODEL,
+            model=settings.agent_model,
             messages=messages,
             tools=get_tool_schemas(),
             tool_choice="auto",
-            max_tokens=FINAL_ANSWER_MAX_TOKENS,
+            max_tokens=settings.final_answer_max_tokens,
         )
         llm_elapsed_s = f"{time.perf_counter() - llm_start:.2f}"
 
@@ -166,7 +167,7 @@ async def run_agent(user_query: str, sender: str) -> dict:
     total_s = f"{time.perf_counter() - turn_start:.2f}"
     log_event(
         "agent_max_iterations_hit",
-        max_iterations=MAX_TOOL_ITERATIONS,
+        max_iterations=settings.max_tool_iterations,
         total_time_secs=total_s,
     )
     return {
@@ -190,23 +191,27 @@ async def run_agent_stream(
     """
     if retrieved_context is None:
         retrieved_context = []
+    settings = get_settings()
     turn_start = time.perf_counter()
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _system_prompt()}]
     messages.extend(
-        await asyncio.to_thread(get_history, sender, limit=CONVERSATION_HISTORY_LIMIT)
+        await asyncio.to_thread(
+            get_history, sender, limit=settings.conversation_history_limit
+        )
     )
     messages.append({"role": "user", "content": user_query})
 
     client = get_async_groq_client()
 
-    for iteration in range(MAX_TOOL_ITERATIONS):
+    for iteration in range(settings.max_tool_iterations):
         llm_start = time.perf_counter()
         stream = await client.chat.completions.create(
-            model=AGENT_MODEL,
+            model=settings.agent_model,
             messages=messages,
             tools=get_tool_schemas(),
             tool_choice="auto",
             stream=True,
+            max_tokens=settings.final_answer_max_tokens,
         )
 
         content_buffer = ""
@@ -292,7 +297,7 @@ async def run_agent_stream(
     total_s = f"{time.perf_counter() - turn_start:.2f}"
     log_event(
         "agent_max_iterations_hit",
-        max_iterations=MAX_TOOL_ITERATIONS,
+        max_iterations=settings.max_tool_iterations,
         total_time_secs=total_s,
     )
     yield AGENT_ERROR_REPLY

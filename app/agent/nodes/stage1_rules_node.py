@@ -9,9 +9,9 @@ that should not be duplicated anywhere else.
 import re
 import secrets
 
-from app.configs.agent_config import DESTINATION_NAMES
+from app.data_ingestion.corpus_meta import get_destinations
 
-_destination_count = len(DESTINATION_NAMES)
+_destination_count = len(get_destinations())
 
 GREETING_PATTERNS = [
     r"^hi+$",

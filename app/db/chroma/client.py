@@ -11,8 +11,6 @@ import chromadb
 from app.core.config import get_settings
 from app.utils.logger import log_event
 
-COLLECTION_NAME = "yatra_destinations"
-
 
 @lru_cache
 def get_chroma_client() -> chromadb.ClientAPI:
@@ -23,7 +21,7 @@ def get_chroma_client() -> chromadb.ClientAPI:
 def get_collection():
     client = get_chroma_client()
     return client.get_or_create_collection(
-        name=COLLECTION_NAME,
+        name=get_settings().collection_name,
         metadata={"hnsw:space": "cosine"},
     )
 
@@ -68,6 +66,6 @@ def reset_collection() -> None:
     """Drop and recreate — useful when re-running build_index.py during development."""
     client = get_chroma_client()
     try:
-        client.delete_collection(COLLECTION_NAME)
+        client.delete_collection(get_settings().collection_name)
     except Exception as e:
         log_event("chroma_reset_collection_not_found", detail=str(e))

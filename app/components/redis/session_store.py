@@ -11,7 +11,7 @@ up.
 import json
 
 from app.components.redis.client import get_redis_client
-from app.configs.agent_config import MAX_STORED_HISTORY_MESSAGES, SESSION_TTL_SECONDS
+from app.core.config import get_settings
 
 
 def _messages_key(sender: str) -> str:
@@ -20,13 +20,14 @@ def _messages_key(sender: str) -> str:
 
 def append_message(sender: str, role: str, content: str) -> None:
     """Append a message, trimming to the cap and resetting the TTL."""
+    settings = get_settings()
     client = get_redis_client()
     key = _messages_key(sender)
 
     message = json.dumps({"role": role, "content": content})
     client.rpush(key, message)
-    client.ltrim(key, -MAX_STORED_HISTORY_MESSAGES, -1)  # keep most recent N
-    client.expire(key, SESSION_TTL_SECONDS)
+    client.ltrim(key, -settings.max_stored_history_messages, -1)  # keep most recent N
+    client.expire(key, settings.session_ttl_seconds)
 
 
 def get_history(sender: str, limit: int | None = None) -> list[dict]:

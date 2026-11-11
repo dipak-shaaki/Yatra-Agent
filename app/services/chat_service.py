@@ -8,7 +8,7 @@ All orchestration (stage1 -> stage2 -> loop-break -> agent) lives in
 
 from collections.abc import AsyncGenerator
 
-from app.agent.graph import UNCLEAR_REPLY, Turn, TurnGraph
+from app.agent.graph import Turn, TurnGraph, unclear_reply
 from app.utils.logger import log_event
 
 _graph = TurnGraph()
@@ -48,4 +48,4 @@ async def handle_turn_stream(
 
 
 # Kept importable here for anyone that referenced the constant at this path.
-__all__ = ["UNCLEAR_REPLY", "handle_turn", "handle_turn_stream"]
+__all__ = ["handle_turn", "handle_turn_stream", "unclear_reply"]

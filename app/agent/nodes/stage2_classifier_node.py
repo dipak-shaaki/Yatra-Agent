@@ -8,7 +8,7 @@ The assistant's last message is included as context so short follow-ups
 import json
 
 from app.components.groq.client import get_async_groq_client
-from app.configs.agent_config import AGENT_MODEL
+from app.core.config import get_settings
 from app.utils.logger import log_event
 
 STAGE2_PROMPT = """Classify the user's LATEST message as exactly one of: "new_question", "filler", "unclear".
@@ -31,9 +31,10 @@ User's latest message: {message}"""
 
 async def classify_stage2(message: str, last_assistant_message: str = "") -> str:
     client = get_async_groq_client()
+    settings = get_settings()
     try:
         response = await client.chat.completions.create(
-            model=AGENT_MODEL,
+            model=settings.agent_model,
             messages=[
                 {
                     "role": "user",
@@ -43,7 +44,7 @@ async def classify_stage2(message: str, last_assistant_message: str = "") -> str
                 }
             ],
             temperature=0,
-            max_tokens=300,
+            max_tokens=settings.classifier_max_tokens,
         )
         result = json.loads(response.choices[0].message.content)
         category = result.get("category", "new_question")

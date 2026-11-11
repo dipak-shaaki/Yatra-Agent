@@ -2,6 +2,7 @@
 Ties dense (Chroma) + sparse (BM25) search together via RRF.
 """
 
+from app.core.config import get_settings
 from app.db.chroma.client import query_collection
 from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.embeddings import embed_query
@@ -9,7 +10,7 @@ from app.retrieval.fusion import reciprocal_rank_fusion
 
 
 def hybrid_search(
-    query: str, n_results: int = 5, candidate_pool: int = 10
+    query: str, n_results: int = 5, candidate_pool: int | None = None
 ) -> list[dict]:
     """
     Returns the top n_results fused chunks as:
@@ -17,6 +18,9 @@ def hybrid_search(
     candidate_pool controls how many results each individual method retrieves
     before fusion — should be >= n_results to give RRF enough to work with.
     """
+    if candidate_pool is None:
+        candidate_pool = get_settings().candidate_pool
+
     # Dense search
     query_embedding = embed_query(query)
     dense_results = query_collection(query_embedding, n_results=candidate_pool)

@@ -29,18 +29,12 @@ async def _new_question_stage2(turn: Turn, last: str) -> None:
     turn.category = "new_question"
 
 
-async def _agent_stub(turn: Turn) -> None:
-    turn.stage = "agent"
-    turn.reply = "Full answer"
-    turn.retrieved_context = ["chunk one", "chunk two"]
-
-
 async def _agent_stream_stub(turn: Turn) -> AsyncGenerator[str]:
     turn.stage = "agent"
     for part in ("Full ", "answer"):
         yield part
     turn.reply = "Full answer"
-    turn.retrieved_context = ["chunk one"]
+    turn.retrieved_context = ["chunk one", "chunk two"]
 
 
 async def _last_msg(sender: str) -> str:
@@ -55,7 +49,7 @@ def test_agent_path_sets_answer_and_context() -> None:
         stage1=_noop_stage1,
         stage2=_new_question_stage2,
         last_assistant_message=_last_msg,
-        agent=_agent_stub,
+        agent_stream=_agent_stream_stub,
     )
     turn = asyncio.run(graph.run(Turn(query="any", sender="user-1")))
 
@@ -69,13 +63,14 @@ def test_agent_path_sets_answer_and_context() -> None:
 def test_short_circuit_skips_agent() -> None:
     called = {"agent": False}
 
-    async def _agent(turn: Turn) -> None:
+    async def _agent_stream(turn: Turn):
         called["agent"] = True
+        yield "should not run"
 
     graph = TurnGraph(
         stage1=_shortcircuit_stage1,
         last_assistant_message=_last_msg,
-        agent=_agent,
+        agent_stream=_agent_stream,
     )
     turn = asyncio.run(graph.run(Turn(query="hi", sender="user-1")))
 
@@ -103,7 +98,7 @@ def test_stream_yields_chunks_and_populates_turn() -> None:
     chunks, turn = asyncio.run(_collect())
     assert chunks == ["Full ", "answer"]
     assert turn.reply == "Full answer"
-    assert turn.retrieved_context == ["chunk one"]
+    assert turn.retrieved_context == ["chunk one", "chunk two"]
     assert not turn.short_circuited
 
 
@@ -138,3 +133,25 @@ def test_filler_stage2_short_circuits() -> None:
     assert turn.stage == "stage2"
     assert turn.category == "filler"
     assert turn.reply == "Acknowledged."
+
+
+def test_out_of_scope_stage2_short_circuits() -> None:
+    async def _out_of_scope_stage2(turn: Turn, last: str) -> None:
+        turn.stage = "stage2"
+        turn.category = "out_of_scope"
+        turn.reply = "Out of scope reply"
+        turn.short_circuited = True
+
+    graph = TurnGraph(
+        stage1=_noop_stage1,
+        stage2=_out_of_scope_stage2,
+        last_assistant_message=_last_msg,
+    )
+    turn = asyncio.run(graph.run(Turn(query="usd to npr", sender="user-1")))
+
+    assert turn.short_circuited
+    assert turn.stage == "stage2"
+    assert turn.category == "out_of_scope"
+    assert turn.reply == "Out of scope reply"
+    assert turn.retrieved_context == []
+    assert turn.tools_called == []

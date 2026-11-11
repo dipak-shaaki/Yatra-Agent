@@ -1,8 +1,6 @@
 from app.agent.tools.calculate_budget_estimate_tool import calculate_budget_estimate
-from app.agent.tools.check_scope_tool import check_scope
 from app.agent.tools.compare_destinations_tool import compare_destinations
 from app.agent.tools.filter_by_criteria_tool import filter_by_criteria
-from app.agent.tools.get_conversation_context_tool import get_conversation_context
 from app.agent.tools.search_destinations_tool import search_destinations
 from app.data_ingestion.corpus_meta import get_destinations
 
@@ -19,30 +17,8 @@ def _corpus_enums() -> tuple[list[str], list[int], list[str]]:
 
 def _tool_schemas() -> list[dict]:
     provinces, difficulties, tags = _corpus_enums()
-    _destination_count = len(get_destinations())
 
     return [
-        {
-            "type": "function",
-            "function": {
-                "name": "check_scope",
-                "description": (
-                    "Determines if a user query is within Yatra's domain "
-                    f"(the {_destination_count} documented Nepal destinations). Run this early "
-                    "on every real query before other tools."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The user's query to check",
-                        },
-                    },
-                    "required": ["query"],
-                },
-            },
-        },
         {
             "type": "function",
             "function": {
@@ -148,42 +124,15 @@ def _tool_schemas() -> list[dict]:
                 },
             },
         },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_conversation_context",
-                "description": (
-                    "Retrieve recent conversation history for this session. Use when "
-                    "the current query references something from earlier in the "
-                    "conversation (e.g. 'that place', 'the one you mentioned', 'it')."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "sender": {
-                            "type": "string",
-                            "description": "Session/user identifier",
-                        },
-                        "num_turns": {
-                            "type": "integer",
-                            "description": "How many recent messages to retrieve",
-                        },
-                    },
-                    "required": ["sender"],
-                },
-            },
-        },
     ]
 
 
 # Maps tool name (as Groq will refer to it) -> actual callable
 TOOL_DISPATCH = {
-    "check_scope": check_scope,
     "search_destinations": search_destinations,
     "filter_by_criteria": filter_by_criteria,
     "compare_destinations": compare_destinations,
     "calculate_budget_estimate": calculate_budget_estimate,
-    "get_conversation_context": get_conversation_context,
 }
 
 

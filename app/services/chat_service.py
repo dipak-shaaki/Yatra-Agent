@@ -24,13 +24,17 @@ def _log_turn(turn: Turn) -> None:
 
 
 async def handle_turn(query: str, sender: str) -> dict:
-    """Returns {"answer": str, "retrieved_context": list[str]}. Short-circuit
-    paths (stage1/stage2 filler/unclear) return empty context, since no
-    retrieval happened for those."""
+    """Returns {"answer": str, "retrieved_context": list[str], "tools_called":
+    list[str]}. Short-circuit paths (stage1/stage2 filler/unclear/out_of_scope)
+    return empty context and tools, since no retrieval happened for those."""
     turn = Turn(query=query, sender=sender)
     await _graph.run(turn)
     _log_turn(turn)
-    return {"answer": turn.reply, "retrieved_context": turn.retrieved_context}
+    return {
+        "answer": turn.reply,
+        "retrieved_context": turn.retrieved_context,
+        "tools_called": turn.tools_called,
+    }
 
 
 async def handle_turn_stream(

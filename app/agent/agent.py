@@ -1,22 +1,26 @@
 """
-Tool-calling loop against Groq: send the conversation plus tool schemas,
-execute any tool calls the model returns, feed the results back as tool
-messages, and repeat until the model answers with plain content.
+Tool-calling loop against Groq (streaming): send the conversation plus tool
+schemas, execute any tool calls the model returns — in parallel — feed the
+results back as tool messages, and repeat until the model answers with plain
+content.
 
-Two entry points: run_agent() (non-streaming) and run_agent_stream()
-(streaming). /chat selects between them via `stream=true|false`. Both are
-async: the Groq client is the AsyncGroq variant, and the sync retrieval /
-tool / Redis calls are pushed to a worker thread so they never block the
-event loop.
+One loop serves both /chat delivery modes: the graph drains
+run_agent_stream() and either forwards the text deltas (SSE) or discards
+them (JSON). State (answer, retrieved context, tools called) is written into
+a caller-owned AgentResult, since async generators cannot return values.
+
+The Groq client is the AsyncGroq variant; the sync retrieval / tool / Redis
+calls are pushed to worker threads so they never block the event loop.
 """
 
 import asyncio
 import json
 import time
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 
 from app.agent.tool_registry import call_tool, get_tool_schemas
-from app.components.groq.client import get_async_groq_client
+from app.components.groq.client import get_async_groq_client, reasoning_params
 from app.components.redis.session_store import get_history
 from app.core.config import get_settings
 from app.data_ingestion.corpus_meta import destination_names
@@ -28,6 +32,15 @@ AGENT_ERROR_REPLY = (
 )
 
 
+@dataclass
+class AgentResult:
+    """What a finished agent turn produced; owned by the caller."""
+
+    answer: str = ""
+    retrieved_context: list[str] = field(default_factory=list)
+    tools_called: list[str] = field(default_factory=list)
+
+
 def _system_prompt() -> str:
     names = destination_names()
     _destinations = ", ".join(names)
@@ -35,10 +48,9 @@ def _system_prompt() -> str:
     return f"""You are Yatra, a helpful assistant for Nepali domestic tourists, covering \
 exactly {_destination_count} destinations: {_destinations}.
 
-Always call check_scope first on any real question to confirm it's within your domain. If in \
-scope, use search_destinations (or other tools) to retrieve real information before answering — \
-never answer from memory alone. If out of scope, politely explain you can only help with these \
-{_destination_count} destinations.
+Use the tools to retrieve real information before answering — never answer from memory \
+alone. The user's question has already been confirmed to be within your domain, so go \
+straight to retrieving and answering.
 
 Response style:
 - Be concise. Answer only what was asked.
@@ -48,149 +60,61 @@ good visibility. Avoid monsoon (June-August, rain) and winter (heavy snow)." NOT
 - ONLY use a table when comparing 2+ destinations side by side, or listing 4+ structured items \
 (e.g. a multi-day budget breakdown). A single destination's single attribute (best time, \
 difficulty, one permit) never needs a table.
+- PRESERVE uncertainty: if retrieved sources hedge ("reportedly", "may have changed", \
+"confirm before travel"), keep that hedge in your answer instead of stating it as certain fact. \
+Never silently drop a caveat like "check current requirements before booking".
+- CITE sources for key facts using the chunk's source_file and last_updated, e.g. \
+"(source: manaslu_circuit.md, updated 2026-09-11)". One citation style, used consistently.
 - End with ONE brief, natural follow-up question when it fits — skip it if the answer is already \
 a direct yes/no or the conversation seems to be wrapping up."""
 
 
-def _capture_retrieved_context(
-    tool_name: str, result, retrieved_context: list[str]
-) -> None:
-    """Collect the text the retrieval-backed tools actually returned, so the
-    faithfulness judge can score against exactly what the agent saw."""
+def _capture_tool_result(tool_name: str, result, run: AgentResult) -> None:
+    """Collect retrieved text + tool usage so evals can score against what
+    the agent actually saw and called."""
+    run.tools_called.append(tool_name)
     if tool_name == "search_destinations" and isinstance(result, list):
-        retrieved_context.extend(chunk.get("text", "") for chunk in result)
+        run.retrieved_context.extend(chunk.get("text", "") for chunk in result)
     elif tool_name == "compare_destinations" and isinstance(result, dict):
         for sections in result.values():
             if isinstance(sections, dict):
-                retrieved_context.extend(sections.values())
+                run.retrieved_context.extend(sections.values())
 
 
-async def run_agent(user_query: str, sender: str) -> dict:
-    """
-    Returns {"answer": str, "retrieved_context": list[str]} — the context
-    list captures every chunk actually retrieved during this turn, so eval
-    scripts can judge faithfulness against what the agent really saw,
-    not a fresh, potentially different retrieval.
-    """
-    settings = get_settings()
-    turn_start = time.perf_counter()
-    messages = [{"role": "system", "content": _system_prompt()}]
-    messages.extend(
-        await asyncio.to_thread(
-            get_history, sender, limit=settings.conversation_history_limit
-        )
-    )
-    messages.append({"role": "user", "content": user_query})
-
-    client = get_async_groq_client()
-    retrieved_context: list[str] = []
-
-    for iteration in range(settings.max_tool_iterations):
-        llm_start = time.perf_counter()
-        response = await client.chat.completions.create(
-            model=settings.agent_model,
-            messages=messages,
-            tools=get_tool_schemas(),
-            tool_choice="auto",
-            max_tokens=settings.final_answer_max_tokens,
-        )
-        llm_elapsed_s = f"{time.perf_counter() - llm_start:.2f}"
-
-        usage = response.usage
-        log_event(
-            "llm_call",
-            iteration=iteration + 1,
-            time_secs=llm_elapsed_s,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-        )
-
-        msg = response.choices[0].message
-
-        if not msg.tool_calls:
-            total_s = f"{time.perf_counter() - turn_start:.2f}"
-            log_event(
-                "agent_final_answer", iterations=iteration + 1, total_time_secs=total_s
-            )
-            return {"answer": msg.content, "retrieved_context": retrieved_context}
-
-        messages.append(
-            {
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ],
-            }
-        )
-
-        for tc in msg.tool_calls:
-            tool_name = tc.function.name
-            tool_start = time.perf_counter()
-            try:
-                args = json.loads(tc.function.arguments)
-                if tool_name == "get_conversation_context":
-                    args["sender"] = sender
-                result = await asyncio.to_thread(call_tool, tool_name, **args)
-                elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
-                log_event("tool_called", tool=tool_name, args=args, time_secs=elapsed_s)
-
-                _capture_retrieved_context(tool_name, result, retrieved_context)
-
-            except Exception as e:
-                elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
-                result = {"error": str(e)}
-                log_event(
-                    "tool_call_failed",
-                    tool=tool_name,
-                    error=str(e),
-                    time_secs=elapsed_s,
-                )
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(result),
-                }
-            )
-
-    total_s = f"{time.perf_counter() - turn_start:.2f}"
-    log_event(
-        "agent_max_iterations_hit",
-        max_iterations=settings.max_tool_iterations,
-        total_time_secs=total_s,
-    )
+async def _execute_tool_call(tool_call: dict, sender: str, run: AgentResult) -> dict:
+    """Runs one tool call on a worker thread; returns the tool message."""
+    tool_start = time.perf_counter()
+    name = tool_call["name"]
+    try:
+        args = json.loads(tool_call["arguments"])
+        result = await asyncio.to_thread(call_tool, name, **args)
+        elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
+        log_event("tool_called", tool=name, args=args, time_secs=elapsed_s)
+        _capture_tool_result(name, result, run)
+        payload = result
+    except Exception as e:
+        elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
+        payload = {"error": str(e)}
+        log_event("tool_call_failed", tool=name, error=str(e), time_secs=elapsed_s)
     return {
-        "answer": AGENT_ERROR_REPLY,
-        "retrieved_context": retrieved_context,
+        "role": "tool",
+        "tool_call_id": tool_call["id"],
+        "content": json.dumps(payload),
     }
 
 
 async def run_agent_stream(
     user_query: str,
     sender: str,
-    retrieved_context: list[str] | None = None,
+    result: AgentResult | None = None,
 ) -> AsyncGenerator[str]:
-    """Yield text chunks as they are generated.
+    """Yield final-answer text chunks as they are generated.
 
-    Tool-call rounds run silently between yields; only final-answer
-    generation streams text to the caller. The retrieved chunks are written
-    into the caller-supplied `retrieved_context` list (async generators
-    cannot return values, so the caller owns that list and reads it after
-    the generator completes).
+    Tool-call rounds run silently between yields. On completion the joined
+    answer, retrieved context and tool calls are written to `result` (created
+    if not supplied) for the caller to read.
     """
-    if retrieved_context is None:
-        retrieved_context = []
+    run = result if result is not None else AgentResult()
     settings = get_settings()
     turn_start = time.perf_counter()
     messages = [{"role": "system", "content": _system_prompt()}]
@@ -212,12 +136,20 @@ async def run_agent_stream(
             tool_choice="auto",
             stream=True,
             max_tokens=settings.final_answer_max_tokens,
+            **reasoning_params(settings.agent_model, settings.reasoning_effort),
         )
 
         content_buffer = ""
         tool_calls_buffer: dict[int, dict] = {}
+        usage = None
 
         async for chunk in stream:
+            # Usage rides on x_groq in the final chunk (some chunks carry
+            # no choices at all — skip those before touching delta).
+            if getattr(chunk, "x_groq", None) and chunk.x_groq.usage:
+                usage = chunk.x_groq.usage
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta
 
             if delta.content:
@@ -228,7 +160,11 @@ async def run_agent_stream(
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
                     if idx not in tool_calls_buffer:
-                        tool_calls_buffer[idx] = {"id": "", "name": "", "arguments": ""}
+                        tool_calls_buffer[idx] = {
+                            "id": "",
+                            "name": "",
+                            "arguments": "",
+                        }
                     if tc_delta.id:
                         tool_calls_buffer[idx]["id"] = tc_delta.id
                     if tc_delta.function.name:
@@ -239,13 +175,39 @@ async def run_agent_stream(
                         )
 
         llm_elapsed_s = f"{time.perf_counter() - llm_start:.2f}"
-        log_event("llm_call_stream", iteration=iteration + 1, time_secs=llm_elapsed_s)
+        log_event(
+            "llm_call_stream",
+            iteration=iteration + 1,
+            time_secs=llm_elapsed_s,
+            **(
+                {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                }
+                if usage
+                else {}
+            ),
+        )
 
         if not tool_calls_buffer:
             total_s = f"{time.perf_counter() - turn_start:.2f}"
+            if not content_buffer.strip():
+                # The model stopped without content — typically reasoning
+                # tokens ate the budget. Fail loudly instead of streaming
+                # an empty answer.
+                log_event(
+                    "agent_empty_content",
+                    iterations=iteration + 1,
+                    total_time_secs=total_s,
+                )
+                run.answer = AGENT_ERROR_REPLY
+                yield AGENT_ERROR_REPLY
+                return
             log_event(
                 "agent_final_answer", iterations=iteration + 1, total_time_secs=total_s
             )
+            run.answer = content_buffer
             return
 
         messages.append(
@@ -256,43 +218,21 @@ async def run_agent_stream(
                     {
                         "id": tc["id"],
                         "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                        },
                     }
                     for tc in tool_calls_buffer.values()
                 ],
             }
         )
 
-        for tc in tool_calls_buffer.values():
-            tool_start = time.perf_counter()
-            try:
-                args = json.loads(tc["arguments"])
-                if tc["name"] == "get_conversation_context":
-                    args["sender"] = sender
-                result = await asyncio.to_thread(call_tool, tc["name"], **args)
-                elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
-                log_event(
-                    "tool_called", tool=tc["name"], args=args, time_secs=elapsed_s
-                )
-
-                _capture_retrieved_context(tc["name"], result, retrieved_context)
-            except Exception as e:
-                elapsed_s = f"{time.perf_counter() - tool_start:.2f}"
-                result = {"error": str(e)}
-                log_event(
-                    "tool_call_failed",
-                    tool=tc["name"],
-                    error=str(e),
-                    time_secs=elapsed_s,
-                )
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": json.dumps(result),
-                }
-            )
+        # Independent tool calls in one round run concurrently.
+        tool_messages = await asyncio.gather(
+            *(_execute_tool_call(tc, sender, run) for tc in tool_calls_buffer.values())
+        )
+        messages.extend(tool_messages)
 
     total_s = f"{time.perf_counter() - turn_start:.2f}"
     log_event(
@@ -300,4 +240,5 @@ async def run_agent_stream(
         max_iterations=settings.max_tool_iterations,
         total_time_secs=total_s,
     )
+    run.answer = AGENT_ERROR_REPLY
     yield AGENT_ERROR_REPLY

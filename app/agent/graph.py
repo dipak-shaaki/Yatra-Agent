@@ -17,7 +17,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 
-from app.agent.agent import run_agent, run_agent_stream
+from app.agent.agent import AgentResult, run_agent_stream
 from app.agent.nodes.loop_breaker_node import (
     check_loop_break,
     increment_filler_count,
@@ -40,6 +40,17 @@ def unclear_reply() -> str:
     )
 
 
+def out_of_scope_reply() -> str:
+    """Same per-call build; the stage2 classifier's out_of_scope branch."""
+    names = destination_names()
+    return (
+        "That's a bit outside what I cover — I'm a Nepal domestic travel assistant for "
+        f"{len(names)} destinations: {', '.join(names)}. I can't help with bookings, live "
+        "prices, or places outside this list, but ask me anything about these "
+        "destinations!"
+    )
+
+
 @dataclass
 class Turn:
     query: str
@@ -47,6 +58,7 @@ class Turn:
     category: str | None = None
     reply: str | None = None
     retrieved_context: list[str] = field(default_factory=list)
+    tools_called: list[str] = field(default_factory=list)
     stage: str | None = None
     short_circuited: bool = False
 
@@ -84,7 +96,8 @@ async def _stage1_node(turn: Turn) -> None:
 
 
 async def _stage2_node(turn: Turn, last_assistant_message: str) -> None:
-    """LLM classifier for what Stage 1's regex did not catch."""
+    """LLM classifier for what Stage 1's regex did not catch. Also enforces
+    the scope guardrail — out_of_scope never reaches the agent loop."""
     turn.stage = "stage2"
     turn.category = await classify_stage2(
         turn.query, last_assistant_message=last_assistant_message
@@ -100,34 +113,26 @@ async def _stage2_node(turn: Turn, last_assistant_message: str) -> None:
         turn.reply = unclear_reply()
         turn.short_circuited = True
         await _append_turn_messages(turn.sender, turn.query, turn.reply)
+    elif turn.category == "out_of_scope":
+        turn.reply = out_of_scope_reply()
+        turn.short_circuited = True
+        await _append_turn_messages(turn.sender, turn.query, turn.reply)
     else:
         # A real question ends any filler streak.
         await asyncio.to_thread(reset_filler_count, turn.sender)
 
 
-async def _agent_node(turn: Turn) -> None:
-    """Full agent loop — the only node that spends real LLM tokens."""
-    turn.stage = "agent"
-    result = await run_agent(turn.query, sender=turn.sender)
-    turn.reply = result["answer"]
-    turn.retrieved_context = result["retrieved_context"]
-    await _append_turn_messages(turn.sender, turn.query, turn.reply)
-
-
 async def _agent_stream_node(turn: Turn) -> AsyncGenerator[str]:
-    """Agent loop, streaming: yields text, stores answer + context on the turn."""
+    """The only agent path: streams text, stores answer + context + tools on
+    the turn. run() drains it and discards the deltas."""
     turn.stage = "agent"
-    retrieved_context: list[str] = []
-    stream = run_agent_stream(
-        turn.query, sender=turn.sender, retrieved_context=retrieved_context
-    )
-    full_answer = ""
-    async for chunk in stream:
-        full_answer += chunk
+    result = AgentResult()
+    async for chunk in run_agent_stream(turn.query, turn.sender, result):
         yield chunk
-    turn.reply = full_answer
-    turn.retrieved_context = retrieved_context
-    await _append_turn_messages(turn.sender, turn.query, full_answer)
+    turn.reply = result.answer
+    turn.retrieved_context = result.retrieved_context
+    turn.tools_called = result.tools_called
+    await _append_turn_messages(turn.sender, turn.query, turn.reply)
 
 
 async def _last_assistant_message_node(sender: str) -> str:
@@ -148,7 +153,8 @@ class TurnGraph:
 
     Both entry points work on a caller-provided `Turn` (async generators
     cannot return values, so the caller owns the Turn and reads its fields
-    after the pipeline completes).
+    after the pipeline completes). run() drains the streaming agent node and
+    ignores the deltas — one code path, two delivery modes.
     """
 
     def __init__(
@@ -156,13 +162,11 @@ class TurnGraph:
         *,
         stage1: Node = _stage1_node,
         stage2: Stage2Node = _stage2_node,
-        agent: Node = _agent_node,
         agent_stream: StreamNode = _agent_stream_node,
         last_assistant_message: LastAssistNode = _last_assistant_message_node,
     ) -> None:
         self._stage1 = stage1
         self._stage2 = stage2
-        self._agent = agent
         self._agent_stream = agent_stream
         self._last_assistant_message = last_assistant_message
 
@@ -174,7 +178,8 @@ class TurnGraph:
         await self._stage2(turn, last_assistant_message)
         if turn.short_circuited:
             return turn
-        await self._agent(turn)
+        async for _ in self._agent_stream(turn):
+            pass
         return turn
 
     async def run_stream(self, turn: Turn) -> AsyncGenerator[str]:

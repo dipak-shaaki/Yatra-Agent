@@ -4,7 +4,7 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 
 ## Features
 
-- **Agentic tool calling** — the LLM (Groq) dynamically selects between `check_scope`, `search_destinations`, `filter_by_criteria`, `compare_destinations`, `calculate_budget_estimate`, and `get_conversation_context`.
+- **Agentic tool calling** — the LLM (Groq) dynamically selects between `search_destinations`, `filter_by_criteria`, `compare_destinations`, and `calculate_budget_estimate`. Scope checking is enforced upstream by the turn classifier.
 - **Hybrid retrieval** — dense (Chroma + `bge-base-en-v1.5`) and sparse (BM25) search fused with Reciprocal Rank Fusion for the best of both.
 - **Section-aware chunking** — corpus Markdown is split on `##` headings instead of arbitrary character counts, preserving semantic boundaries.
 - **Cost-aware turn handling** — a regex fast path answers greetings/acknowledgments with 0 LLM calls; an LLM classifier catches the rest. Repeated filler triggers a loop break.

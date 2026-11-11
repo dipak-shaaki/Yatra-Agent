@@ -14,7 +14,6 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.agent.tools.check_scope_tool import check_scope
 from app.agent.tools.search_destinations_tool import search_destinations
 from app.services.chat_service import handle_turn, handle_turn_stream
 
@@ -24,11 +23,6 @@ router = APIRouter()
 class QueryRequest(BaseModel):
     query: str
     n_results: int = 5
-
-
-@router.post("/debug/check-scope")
-async def debug_check_scope(request: QueryRequest):
-    return await asyncio.to_thread(check_scope, request.query)
 
 
 @router.post("/debug/search")

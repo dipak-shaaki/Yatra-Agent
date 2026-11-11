@@ -7,6 +7,7 @@ from app.db.chroma.client import query_collection
 from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.embeddings import embed_query
 from app.retrieval.fusion import reciprocal_rank_fusion
+from app.utils.logger import log_event
 
 
 def hybrid_search(
@@ -34,20 +35,44 @@ def hybrid_search(
     # Fuse
     fused = reciprocal_rank_fusion([dense_ids, sparse_ids])[:n_results]
 
-    # Rehydrate full chunk data for the fused top results
-    # (dense_results already has documents/metadatas for dense_ids; pull the rest from bm25_index.chunks)
+    # Rehydrate full chunk data for the fused top results.
+    # dense_results carries documents/metadata for dense hits; BM25's in-memory
+    # chunks cover the rest. If an id is in neither (e.g. BM25 serves a stale
+    # cache after a corpus edit), fall back to the next dense result instead of
+    # silently returning fewer chunks than asked for — and log the drift.
     chunk_lookup = {c["id"]: c for c in bm25_index.chunks}
+    dense_by_id = {
+        chunk_id: {
+            "id": chunk_id,
+            "text": doc,
+            "metadata": meta,
+        }
+        for chunk_id, doc, meta in zip(
+            dense_ids, dense_results["documents"][0], dense_results["metadatas"][0]
+        )
+    }
 
     results = []
     for chunk_id, score in fused:
-        chunk = chunk_lookup.get(chunk_id)
-        if chunk:
-            results.append(
-                {
-                    "id": chunk_id,
-                    "text": chunk["text"],
-                    "metadata": chunk["metadata"],
-                    "score": score,
-                }
-            )
+        chunk = chunk_lookup.get(chunk_id) or dense_by_id.get(chunk_id)
+        if chunk is None:
+            log_event("hybrid_search_missing_chunk", chunk_id=chunk_id, source="fusion")
+            continue
+        results.append(
+            {
+                "id": chunk_id,
+                "text": chunk["text"],
+                "metadata": chunk["metadata"],
+                "score": score,
+            }
+        )
+    # Top up from dense results if fusion lost chunks to lookup misses.
+    if len(results) < n_results:
+        seen = {r["id"] for r in results}
+        for chunk_id, chunk in dense_by_id.items():
+            if len(results) >= n_results:
+                break
+            if chunk_id not in seen:
+                log_event("hybrid_search_backfilled_from_dense", chunk_id=chunk_id)
+                results.append({**chunk, "score": 0.0})
     return results

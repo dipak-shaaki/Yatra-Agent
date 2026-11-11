@@ -1,17 +1,23 @@
 ---
 name: "Rara Lake"
+aliases: ["rara", "rara lake trek"]
 province: "Karnali"
 district: "Mugu"
-type: "lake / trek"
+tags: ["lake", "trek"]
+difficulty: 3
 best_time_to_visit: ["Mar-May", "Sep-Nov"]
 avoided_season: ["Jun-Aug (monsoon)", "Dec-Feb (heavy snow)"]
 route: "Fly Kathmandu-Nepalgunj-Talcha then short hike; or overland via Surkhet-Jumla then trek"
 distance_from_kathmandu: "~370 km NW (straight line); longer via Nepalgunj route"
-difficulty_level: "moderate"
 time_required: "10-15 days round trip (shorter with fly-in option)"
+days_min: 10
+days_max: 15
 max_altitude_m: 2990
 permits_required: ["TIMS card", "Rara National Park entry permit"]
 estimated_budget_npr: "NPR 25,000-45,000 per person (domestic flights via Nepalgunj, lodging, meals - domestic traveler estimate; lower via overland route but adds several travel days)"
+budget_min_npr: 25000
+budget_max_npr: 45000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

@@ -1,17 +1,23 @@
 ---
 name: "Tansen (Palpa)"
+aliases: ["tansen", "palpa"]
 province: "Lumbini"
 district: "Palpa"
-type: "hill town"
+tags: ["hill town"]
+difficulty: 1
 best_time_to_visit: ["Oct-Dec", "Mar-Apr", "year-round destination"]
 avoided_season: ["Jun-Aug (monsoon, humid)"]
 route: "Bus to Butwal, then shared jeep/bus to Tansen (no direct transport from Kathmandu)"
 distance_from_kathmandu: "~300 km; via Butwal"
-difficulty_level: "easy"
 time_required: "1-2 days"
+days_min: 1
+days_max: 2
 max_altitude_m: 1310
 permits_required: []
 estimated_budget_npr: "NPR 3,000-6,000 per person per day (bus fare via Butwal, lodging, meals - domestic traveler estimate)"
+budget_min_npr: 3000
+budget_max_npr: 6000
+budget_per_day: true
 last_updated: "2026-09-11"
 ---
 

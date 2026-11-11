@@ -1,17 +1,23 @@
 ---
 name: "Annapurna Base Camp (ABC)"
+aliases: ["annapurna", "annapurna base camp", "abc"]
 province: "Gandaki"
 district: "Kaski/Myagdi"
-type: "trek"
+tags: ["trek"]
+difficulty: 3
 best_time_to_visit: ["Sep-Dec", "Mar-May"]
 avoided_season: ["Jun-Aug (monsoon)"]
 route: "Kathmandu to Pokhara (flight or drive), then Pokhara to Nayapul, trek begins"
 distance_from_kathmandu: "via Pokhara; Pokhara is 6-7 hrs drive or ~25 min flight from Kathmandu"
-difficulty_level: "moderate"
 time_required: "7-14 days"
+days_min: 7
+days_max: 14
 max_altitude_m: 4130
 permits_required: ["ACAP", "TIMS card"]
 estimated_budget_npr: "NPR 12,000-25,000 per person (teahouse lodging, meals, transport, permits - domestic traveler estimate; lower if without guide)"
+budget_min_npr: 12000
+budget_max_npr: 25000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

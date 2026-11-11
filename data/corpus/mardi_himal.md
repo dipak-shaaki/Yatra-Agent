@@ -1,17 +1,23 @@
 ---
 name: "Mardi Himal"
+aliases: ["mardi", "mardi himal trek"]
 province: "Gandaki"
 district: "Kaski"
-type: "trek"
+tags: ["trek"]
+difficulty: 2
 best_time_to_visit: ["Mar-May", "Sep-Dec"]
 avoided_season: ["Jun-Aug (monsoon)"]
 route: "Kathmandu to Pokhara, then Pokhara to Kande/Dhampus, trek begins"
 distance_from_kathmandu: "via Pokhara; then ~1-1.5 hr drive to trailhead"
-difficulty_level: "easy-moderate"
 time_required: "4-7 days"
+days_min: 4
+days_max: 7
 max_altitude_m: 4500
 permits_required: ["ACAP", "TIMS card"]
 estimated_budget_npr: "NPR 8,000-15,000 per person (short trek, teahouse lodging, meals, transport, permits - domestic traveler estimate)"
+budget_min_npr: 8000
+budget_max_npr: 15000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

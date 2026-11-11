@@ -1,17 +1,23 @@
 ---
 name: "Badimalika"
+aliases: ["badimalika temple"]
 province: "Sudurpashchim"
 district: "Bajura"
-type: "religious pilgrimage / trek"
+tags: ["pilgrimage", "trek"]
+difficulty: 4
 best_time_to_visit: ["Mar-May", "Sep-Nov"]
 avoided_season: ["Dec-Feb (heavy snow)", "Jun-Aug except for Janai Purnima festival"]
 route: "Fly Kathmandu to Dhangadhi/Nepalgunj, then road to Martadi, then 2-4 day trek"
 distance_from_kathmandu: "flight to Dhangadhi/Nepalgunj + ~10-12 hr jeep drive to Martadi"
-difficulty_level: "moderate-strenuous"
 time_required: "10-12 days total (2-4 days trekking from Martadi)"
+days_min: 10
+days_max: 12
 max_altitude_m: 4219
 permits_required: ["Khaptad National Park permit", "Bajura local area permit"]
 estimated_budget_npr: "NPR 20,000-35,000 per person (flight, jeep transport, guide, basic lodging/camping, meals - domestic traveler estimate)"
+budget_min_npr: 20000
+budget_max_npr: 35000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

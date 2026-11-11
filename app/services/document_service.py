@@ -1,7 +1,8 @@
 """
-Document ingestion/update: write the corpus markdown, re-chunk that one
+Corpus ingestion/update: write the corpus markdown, re-chunk that one
 file, re-embed, upsert into Chroma (only that destination's chunk IDs), and
-reset the BM25 cache so it rebuilds on next use.
+invalidate the in-process corpus caches + bump the shared corpus version so
+every worker rebuilds its BM25 index.
 
 BM25 has no incremental-update API, so any content change forces a full
 rebuild — cheap (tokenization only, no embedding calls).
@@ -10,27 +11,24 @@ rebuild — cheap (tokenization only, no embedding calls).
 from pathlib import Path
 
 from app.core.config import get_settings
-from app.data_ingestion.chunker import _parse_frontmatter, chunk_document
+from app.data_ingestion.chunker import chunk_document
+from app.data_ingestion.corpus_meta import reset_corpus_meta
+from app.data_ingestion.frontmatter import parse_frontmatter
 from app.db.chroma.client import delete_chunks_by_source_file, upsert_chunks
-from app.retrieval.bm25_index import reset_bm25_index
+from app.retrieval.bm25_index import bump_corpus_version
 from app.retrieval.embeddings import embed_documents
 from app.utils.logger import log_event
-
-CORPUS_DIR = Path(get_settings().corpus_dir)
 
 
 def upsert_document(filename: str, content: str) -> dict:
     try:
-        frontmatter, _ = _parse_frontmatter(content)
+        # Validates the full frontmatter schema — bad documents are rejected
+        # before anything is written to disk or the index.
+        parse_frontmatter(content)
     except ValueError as e:
         raise ValueError(f"Invalid document format, not written: {e}")
 
-    if not frontmatter.get("name"):
-        raise ValueError(
-            "Document frontmatter must include a 'name' field, not written"
-        )
-
-    file_path = CORPUS_DIR / f"{filename}.md"
+    file_path = Path(get_settings().corpus_dir) / f"{filename}.md"
     is_update = file_path.exists()  # reported in the response/logs
 
     file_path.write_text(content, encoding="utf-8")
@@ -71,8 +69,11 @@ def upsert_document(filename: str, content: str) -> dict:
     )
     log_event("document_upserted", filename=filename, chunk_count=len(chunks))
 
-    reset_bm25_index()
-    log_event("bm25_index_invalidated", reason=f"document_update:{filename}")
+    # Invalidate every in-process corpus view, then bump the shared corpus
+    # version so other workers' BM25 indexes rebuild on their next use.
+    reset_corpus_meta()
+    bump_corpus_version()
+    log_event("corpus_caches_invalidated", reason=f"document_update:{filename}")
 
     return {
         "filename": filename,

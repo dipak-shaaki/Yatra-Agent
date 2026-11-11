@@ -1,4 +1,4 @@
-from app.agent.tools.destination_resolver import resolve_destination_name
+from app.data_ingestion.corpus_meta import resolve_destination
 from app.db.chroma.client import get_collection
 
 
@@ -11,7 +11,7 @@ def calculate_budget_estimate(
     about whether/how to scale the estimate — rather than this tool
     fabricating a multiplied total from inconsistently formatted text.
     """
-    resolved = resolve_destination_name(destination_name)
+    resolved = resolve_destination(destination_name)
     if not resolved:
         return {"error": f"Unknown destination: '{destination_name}'"}
 

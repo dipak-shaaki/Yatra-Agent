@@ -1,17 +1,23 @@
 ---
 name: "Manaslu Circuit"
+aliases: ["manaslu", "manaslu circuit trek"]
 province: "Gandaki"
 district: "Gorkha"
-type: "trek"
+tags: ["trek"]
+difficulty: 4
 best_time_to_visit: ["Sep-Nov", "Mar-May"]
 avoided_season: ["Jun-Aug (monsoon)", "Dec-Feb (heavy snow, pass closures)"]
 route: "Kathmandu to Machha Khola (or Soti Khola/Jagat) by bus or jeep, then trek the circuit to Dharapani"
 distance_from_kathmandu: "160-180 km by road to trailhead"
-difficulty_level: "moderate-difficult"
 time_required: "12-18 days (14 days standard)"
+days_min: 12
+days_max: 18
 max_altitude_m: 5106
 permits_required: ["Manaslu RAP", "MCAP", "ACAP"]
 estimated_budget_npr: "NPR 35,000-60,000 per person (guide, basic teahouse lodging, meals, permits, transport - domestic traveler estimate)"
+budget_min_npr: 35000
+budget_max_npr: 60000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

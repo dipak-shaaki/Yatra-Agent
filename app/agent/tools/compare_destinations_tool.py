@@ -1,4 +1,4 @@
-from app.agent.tools.destination_resolver import resolve_destination_name
+from app.data_ingestion.corpus_meta import resolve_destination
 from app.db.chroma.client import get_collection
 
 COMPARISON_SECTIONS = [
@@ -17,7 +17,7 @@ def compare_destinations(destination_names: list[str]) -> dict:
     unresolved = []
 
     for raw_name in destination_names:
-        resolved = resolve_destination_name(raw_name)
+        resolved = resolve_destination(raw_name)
         if not resolved:
             unresolved.append(raw_name)
             continue

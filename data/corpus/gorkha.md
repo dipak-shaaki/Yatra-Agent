@@ -1,17 +1,23 @@
 ---
 name: "Gorkha"
+aliases: []
 province: "Gandaki"
 district: "Gorkha"
-type: "historic town"
+tags: ["historic town"]
+difficulty: 2
 best_time_to_visit: ["Oct-May", "esp. Mar-May and Sep-Nov"]
 avoided_season: ["Jun-Sep (hot, humid, monsoon clouds)"]
 route: "Bus or private vehicle from Kathmandu to Gorkha Bazaar, then climb ~1500 steps or drive to Gorkha Durbar"
 distance_from_kathmandu: "~5-6 hrs by road"
-difficulty_level: "easy-moderate"
 time_required: "day trip or overnight"
+days_min: 1
+days_max: 2
 max_altitude_m: 1400
 permits_required: []
 estimated_budget_npr: "NPR 3,000-6,000 per person per day (bus fare, lodging, meals, entry fee - domestic traveler estimate)"
+budget_min_npr: 3000
+budget_max_npr: 6000
+budget_per_day: true
 last_updated: "2026-09-11"
 ---
 

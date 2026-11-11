@@ -1,17 +1,23 @@
 ---
 name: "Kori (Kori Danda)"
+aliases: ["kori", "kori danda"]
 province: "Gandaki"
 district: "Kaski/Lamjung"
-type: "trek"
+tags: ["trek"]
+difficulty: 3
 best_time_to_visit: ["Mar-May", "Sep-Nov"]
 avoided_season: ["Jun-Aug (monsoon)"]
 route: "Kathmandu to Pokhara, then off-road jeep to Sikles village, trek begins"
 distance_from_kathmandu: "via Pokhara; then off-road jeep drive to Sikles"
-difficulty_level: "moderate"
 time_required: "approx 6 days"
+days_min: 6
+days_max: 6
 max_altitude_m: 3800
 permits_required: ["ACAP", "TIMS card"]
 estimated_budget_npr: "NPR 8,000-14,000 per person (6-day trek, homestay/teahouse lodging, meals, jeep transport - domestic traveler estimate)"
+budget_min_npr: 8000
+budget_max_npr: 14000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

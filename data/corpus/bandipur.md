@@ -1,17 +1,23 @@
 ---
 name: "Bandipur"
+aliases: []
 province: "Gandaki"
 district: "Tanahun"
-type: "hill town / heritage village"
+tags: ["hill town", "heritage village"]
+difficulty: 1
 best_time_to_visit: ["Mar-May", "Sep-Nov"]
 avoided_season: ["Jun-Aug (monsoon)"]
 route: "Bus from Kathmandu or Pokhara to Dumre, then local bus/jeep uphill to Bandipur"
 distance_from_kathmandu: "~5-6 hrs bus to Dumre + short uphill transfer"
-difficulty_level: "easy"
 time_required: "1-2 days"
+days_min: 1
+days_max: 2
 max_altitude_m: null
 permits_required: []
 estimated_budget_npr: "NPR 3,000-6,000 per person per day (bus fare, guesthouse lodging, meals - domestic traveler estimate)"
+budget_min_npr: 3000
+budget_max_npr: 6000
+budget_per_day: true
 last_updated: "2026-09-11"
 ---
 

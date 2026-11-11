@@ -1,13 +1,13 @@
 """
-Parses a destination corpus markdown file (YAML frontmatter + ## sections)
-into a list of chunk dicts ready for embedding + Chroma storage.
+Parses a destination corpus markdown file (validated YAML frontmatter +
+## sections) into a list of chunk dicts ready for embedding + Chroma storage.
 """
 
 import re
 from pathlib import Path
 from typing import Any
 
-import yaml
+from app.data_ingestion.frontmatter import parse_frontmatter
 
 SECTION_SPLIT_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
@@ -33,28 +33,6 @@ def _flatten_metadata(
     return flat
 
 
-def _parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
-    """Split leading YAML frontmatter (a `---`-delimited block at the top)
-    from the rest of the document. Splits on whole `---` lines only, so a
-    `---` appearing later in the body (e.g. a markdown horizontal rule) is
-    never mistaken for the closing marker."""
-    lines = raw_text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        raise ValueError("Document missing YAML frontmatter (must start with '---')")
-
-    end = None
-    for idx, line in enumerate(lines[1:], start=1):
-        if line.strip() == "---":
-            end = idx
-            break
-    if end is None:
-        raise ValueError("Malformed frontmatter — expected opening and closing '---'")
-
-    frontmatter = yaml.safe_load("\n".join(lines[1:end])) or {}
-    body = "\n".join(lines[end + 1 :]).strip()
-    return frontmatter, body
-
-
 def _strip_sources_footer(body: str) -> str:
     """Drop a trailing '---\\n*Sources: ...*' footer if present."""
     return re.split(r"\n---\s*\n\*Sources:.*", body, flags=re.DOTALL)[0].strip()
@@ -69,12 +47,12 @@ def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
     file_path = Path(file_path)
     raw_text = file_path.read_text(encoding="utf-8")
 
-    frontmatter, body = _parse_frontmatter(raw_text)
+    frontmatter, body = parse_frontmatter(raw_text)
     body = _strip_sources_footer(body)
     body = _strip_title_line(body)
 
-    dest_name = frontmatter.get("name", file_path.stem)
-    metadata_base = _flatten_metadata(frontmatter)
+    dest_name = frontmatter.name
+    metadata_base = _flatten_metadata(frontmatter.model_dump())
 
     chunks = []
 

@@ -1,0 +1,108 @@
+"""
+Corpus-level metadata derived from the destination frontmatter: canonical
+names, aliases, controlled-vocabulary values, numeric budget/duration
+ranges, and the section titles used for comparisons.
+
+Everything here reads the corpus directory at call time (cached), so a
+document upsert followed by `reset_corpus_meta()` is immediately visible
+to tools, prompts, and tool schemas without a process restart.
+"""
+
+from collections import Counter
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+from app.core.config import get_settings
+from app.data_ingestion.chunker import SECTION_SPLIT_RE, chunk_corpus_dir
+from app.data_ingestion.frontmatter import parse_frontmatter
+
+
+@dataclass(frozen=True)
+class Destination:
+    name: str
+    aliases: tuple[str, ...]
+    province: str
+    district: str
+    tags: tuple[str, ...]
+    difficulty: int  # 1 = easy ... 5 = very hard
+    best_time_to_visit: tuple[str, ...]
+    avoided_season: tuple[str, ...]
+    route: str
+    distance_from_kathmandu: str
+    time_required: str
+    days_min: int
+    days_max: int
+    max_altitude_m: int | None
+    permits_required: tuple[str, ...]
+    estimated_budget_npr: str
+    budget_min_npr: int
+    budget_max_npr: int
+    budget_per_day: bool
+    last_updated: str
+    source_file: str
+    sections: tuple[str, ...]
+
+
+@lru_cache
+def _load_destinations(corpus_dir: str) -> tuple[Destination, ...]:
+    destinations = []
+    for md_file in sorted(Path(corpus_dir).glob("*.md")):
+        raw = md_file.read_text(encoding="utf-8")
+        frontmatter, body = parse_frontmatter(raw)
+        data = {
+            k: tuple(v) if isinstance(v, list) else v
+            for k, v in frontmatter.model_dump().items()
+        }
+        destinations.append(
+            Destination(
+                **data,
+                source_file=md_file.name,
+                sections=tuple(SECTION_SPLIT_RE.findall(body)),
+            )
+        )
+    return tuple(destinations)
+
+
+@lru_cache
+def _load_chunks(corpus_dir: str) -> tuple[dict, ...]:
+    return tuple(chunk_corpus_dir(corpus_dir))
+
+
+def get_destinations() -> tuple[Destination, ...]:
+    return _load_destinations(get_settings().corpus_dir)
+
+
+def get_corpus_chunks() -> tuple[dict, ...]:
+    """Every corpus chunk as {"id", "text", "metadata"} — used by tools that
+    need full section text without going through Chroma (and so cannot drift
+    from an out-of-date index)."""
+    return _load_chunks(get_settings().corpus_dir)
+
+
+def reset_corpus_meta() -> None:
+    """Call after corpus files change on disk (e.g. document upsert)."""
+    _load_destinations.cache_clear()
+    _load_chunks.cache_clear()
+
+
+def destination_names() -> tuple[str, ...]:
+    return tuple(d.name for d in get_destinations())
+
+
+def resolve_destination(raw_name: str) -> str | None:
+    """Exact corpus name for a casual/raw name or alias, else None."""
+    raw = raw_name.strip().lower()
+    for dest in get_destinations():
+        if raw == dest.name.lower() or raw in {a.lower() for a in dest.aliases}:
+            return dest.name
+    return None
+
+
+def comparison_sections() -> tuple[str, ...]:
+    """Section titles present in at least half the destinations — the
+    schema-driven comparison vocabulary, replacing a hardcoded list."""
+    destinations = get_destinations()
+    threshold = max(1, len(destinations) // 2)
+    counts = Counter(s for dest in destinations for s in dest.sections)
+    return tuple(section for section, n in counts.items() if n >= threshold)

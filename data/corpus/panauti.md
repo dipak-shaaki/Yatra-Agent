@@ -1,17 +1,23 @@
 ---
 name: "Panauti"
+aliases: []
 province: "Bagmati"
 district: "Kavrepalanchok"
-type: "heritage village"
+tags: ["heritage village"]
+difficulty: 1
 best_time_to_visit: ["Mar-May", "Sep-Nov"]
 avoided_season: ["Jun-Aug (monsoon)"]
 route: "Local bus from Ratna Park bus park, Kathmandu; or private car/taxi"
 distance_from_kathmandu: "~32 km southeast of Kathmandu, ~1-1.5 hr by bus"
-difficulty_level: "easy"
 time_required: "half-day to 1 day (2 nights if homestay)"
+days_min: 1
+days_max: 3
 max_altitude_m: null
 permits_required: []
 estimated_budget_npr: "NPR 1,500-4,000 per person for a day trip (bus fare, meals); NPR 4,000-7,000 if staying overnight at a homestay"
+budget_min_npr: 1500
+budget_max_npr: 7000
+budget_per_day: false
 last_updated: "2026-09-11"
 ---
 

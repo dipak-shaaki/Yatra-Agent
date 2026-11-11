@@ -99,28 +99,6 @@ body {
   color: var(--text-dim);
 }
 
-.sender {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-.sender input {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 9px;
-  font-size: 13px;
-}
-
-.sender input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
 .messages {
   flex: 1;
   overflow-y: auto;

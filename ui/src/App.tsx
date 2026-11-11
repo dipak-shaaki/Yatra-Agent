@@ -13,13 +13,30 @@ const SUGGESTIONS = [
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [sender, setSender] = useState('test_user')
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
+
+  // Mint a session token once per page load; the server derives the chat
+  // identity from it, so there is no client-chosen sender anymore.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/v1/session', { method: 'POST' })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: { session_token: string }) => {
+        if (!cancelled) setSessionToken(data.session_token)
+      })
+      .catch(() => {
+        /* chat calls will surface the error */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function send() {
     const query = input.trim()
@@ -43,10 +60,12 @@ function App() {
     const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
 
     try {
-      const res = await fetch(
-        `/api/v1/chat?stream=true&query=${encodeURIComponent(query)}&sender=${encodeURIComponent(sender)}`,
-        { method: 'POST' },
-      )
+      if (!sessionToken) throw new Error('Session not ready yet — try again in a moment')
+      const res = await fetch('/api/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Session-Token': sessionToken },
+        body: JSON.stringify({ query, stream: true }),
+      })
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || `HTTP ${res.status}`)
@@ -101,14 +120,6 @@ function App() {
             <span className="tagline">Nepal domestic travel assistant</span>
           </span>
         </div>
-        <label className="sender">
-          sender
-          <input
-            value={sender}
-            onChange={(e) => setSender(e.target.value)}
-            spellCheck={false}
-          />
-        </label>
       </header>
 
       <main className="messages">
@@ -160,7 +171,7 @@ function App() {
           onKeyDown={(e) => e.key === 'Enter' && send()}
           disabled={busy}
         />
-        <button onClick={send} disabled={busy || !input.trim()}>
+        <button onClick={send} disabled={busy || !input.trim() || !sessionToken}>
           Send
         </button>
       </footer>

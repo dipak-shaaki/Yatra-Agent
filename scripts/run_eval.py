@@ -2,111 +2,157 @@
 Runs eval/cases/*.jsonl against the running system over HTTP, exercising the
 full stack (Turn Handler, agent loop, tools).
 
-Captures each case's actual output and retrieved context for a human or the
-LLM-as-judge step to score. It does not auto-grade expected_answer — that is
-free text and hard to compare exactly.
+Each case runs in its own session (fresh history) — POST /api/v1/session,
+then POST /api/v1/chat with the X-Session-Token header. The server must run
+with EXPOSE_EVAL_CONTEXT=true for retrieved_context to be captured.
+
+Captures each case's actual output, retrieved context, tools called and
+latency for the judge/metrics step to score. It does not auto-grade
+expected_answer — that is free text and hard to compare exactly.
+
+All paths are anchored to the project root, so the script behaves the same
+no matter where it is launched from; every knob is a CLI flag.
 """
 
+import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
 import httpx
 
-API_URL = "http://localhost:8000/api/v1/chat"
-EVAL_DIR = Path("eval/cases")
-RESULTS_PATH = Path("eval/results.jsonl")
-
-# Delay between evaluation cases to avoid hammering API/rate limits.
-DELAY_BETWEEN_CASES = 2
-
-# Allow extra time for slower requests caused by rate limits or LLM latency.
-HTTP_TIMEOUT = 45
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_cases() -> list[dict]:
+def load_cases(eval_dir: Path) -> list[dict]:
     """Load all evaluation cases from JSONL files."""
     cases = []
-
-    for jsonl_file in sorted(EVAL_DIR.glob("*.jsonl")):
+    for jsonl_file in sorted(eval_dir.glob("*.jsonl")):
         with open(jsonl_file) as f:
             for line in f:
                 line = line.strip()
-
                 if line:
                     cases.append(json.loads(line))
-
     return cases
 
 
-def run_case(case: dict) -> dict:
-    sender = f"eval_{case['id']}"
+def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) -> dict:
     start = time.perf_counter()
     try:
-        response = httpx.post(
-            API_URL,
-            params={"query": case["question"], "sender": sender},
-            timeout=HTTP_TIMEOUT,
+        session_token = (
+            client.post(f"{base_url}/session", timeout=timeout)
+            .raise_for_status()
+            .json()["session_token"]
+        )
+
+        response = client.post(
+            f"{base_url}/chat",
+            json={"query": case["question"], "stream": False},
+            headers={"X-Session-Token": session_token},
+            timeout=timeout,
         )
         response.raise_for_status()
-        response_json = response.json()
-        answer = response_json["answer"]
-        retrieved_context = response_json.get("retrieved_context", [])
+        body = response.json()
+        answer = body.get("answer")
+        retrieved_context = body.get("retrieved_context", [])
+        tools_called = body.get("tools_called", [])
         error = None
     except Exception as e:
         answer = None
         retrieved_context = []
+        tools_called = []
         error = str(e)
     elapsed_s = round(time.perf_counter() - start, 2)
 
     return {
         "id": case["id"],
-        "category": case["category"],
-        "difficulty": case["difficulty"],
+        "category": case.get("category"),
+        "difficulty": case.get("difficulty"),
         "question": case["question"],
-        "expected_answer": case["expected_answer"],
+        "expected_answer": case.get("expected_answer"),
         "actual_answer": answer,
         "retrieved_context": retrieved_context,
+        "tools_called": tools_called,
         "error": error,
         "time_secs": elapsed_s,
     }
 
 
-def main():
-    """Run all evaluation cases and save results."""
-    cases = load_cases()
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--api-url",
+        default="http://localhost:8000/api/v1",
+        help="Base URL of the running Yatra API (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--eval-dir",
+        type=Path,
+        default=PROJECT_ROOT / "eval" / "cases",
+        help="Directory of *.jsonl eval cases",
+    )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        default=PROJECT_ROOT / "eval" / "results.jsonl",
+        help="Output results file (JSONL)",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between cases (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=45.0,
+        help="Per-request HTTP timeout in seconds (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Run only the first N cases"
+    )
+    args = parser.parse_args()
 
-    print(f"Running {len(cases)} eval cases...\n")
+    cases = load_cases(args.eval_dir)
+    if args.limit:
+        cases = cases[: args.limit]
+    if not cases:
+        print(f"No cases found in {args.eval_dir}", file=sys.stderr)
+        return 1
+
+    print(f"Running {len(cases)} eval cases against {args.api_url}...\n")
 
     results = []
+    with httpx.Client() as client:
+        for index, case in enumerate(cases):
+            print(f"[{case['id']}] ({case.get('category')}) {case['question']}")
 
-    for index, case in enumerate(cases):
-        print(f"[{case['id']}] ({case['category']}) {case['question']}")
+            result = run_case(case, client, args.api_url, args.timeout)
+            results.append(result)
 
-        result = run_case(case)
-        results.append(result)
+            if result["error"]:
+                print(f"  ERROR: {result['error']}")
+            else:
+                print(f"  time={result['time_secs']}s tools={result['tools_called']}")
+                print(f"  expected: {(result['expected_answer'] or '')[:100]}")
+                print(f"  actual:   {(result['actual_answer'] or '')[:100]}")
 
-        if result["error"]:
-            print(f"  ERROR: {result['error']}")
-        else:
-            print(f"  time={result['time_secs']}s")
-            print(f"  expected: {result['expected_answer'][:100]}")
-            print(f"  actual:   {(result['actual_answer'] or '')[:100]}")
+            print()
 
-        print()
+            # Wait between cases to reduce API/rate-limit pressure.
+            if index < len(cases) - 1 and args.delay > 0:
+                time.sleep(args.delay)
 
-        # Wait between cases to reduce API/rate-limit pressure.
-        # No need to sleep after the final case.
-        if index < len(cases) - 1:
-            print(f"  Waiting {DELAY_BETWEEN_CASES}s before next case...\n")
-            time.sleep(DELAY_BETWEEN_CASES)
-
-    with open(RESULTS_PATH, "w") as f:
+    args.results.parent.mkdir(parents=True, exist_ok=True)
+    with open(args.results, "w") as f:
         for result in results:
             f.write(json.dumps(result) + "\n")
 
-    print(f"Saved {len(results)} results to {RESULTS_PATH}")
+    print(f"Saved {len(results)} results to {args.results}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

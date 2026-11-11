@@ -1,14 +1,19 @@
 """
-Conversation history per session (sender), stored as a Redis list of JSON
+Conversation history per session, stored as a Redis list of JSON
 {"role", "content"} messages under "session:{sender}:messages".
 
-The JSON shape matches what the agent loop builds, so history can be spliced
-straight into its `messages` list. TTL is reset on every write, so an active
-conversation never expires mid-session while an abandoned one cleans itself
-up.
+Session identity: clients call POST /api/v1/session to mint a token, and
+the token itself is the sender id — the client never picks its own, so one
+user cannot read or corrupt another's history. TTL is reset on every write,
+so an active conversation never expires mid-session while an abandoned one
+cleans itself up.
+
+Also owns the per-session fixed-window rate limiter for /chat.
 """
 
 import json
+import secrets
+import time
 
 from app.components.redis.client import get_redis_client
 from app.core.config import get_settings
@@ -16,6 +21,44 @@ from app.core.config import get_settings
 
 def _messages_key(sender: str) -> str:
     return f"session:{sender}:messages"
+
+
+def _token_key(token: str) -> str:
+    return f"session_token:{token}"
+
+
+def _rate_key(sender: str, window: int) -> str:
+    return f"rate:{sender}:{window}"
+
+
+def create_session_token() -> str:
+    """Mint a new session token (the server-side sender identity)."""
+    settings = get_settings()
+    token = secrets.token_urlsafe(24)
+    get_redis_client().set(_token_key(token), "1", ex=settings.session_ttl_seconds)
+    return token
+
+
+def validate_session_token(token: str) -> bool:
+    """True if the token is known. Refreshes the sliding TTL on use."""
+    settings = get_settings()
+    client = get_redis_client()
+    if not client.get(_token_key(token)):
+        return False
+    client.expire(_token_key(token), settings.session_ttl_seconds)
+    return True
+
+
+def check_rate_limit(sender: str, limit_per_minute: int) -> tuple[bool, int]:
+    """Fixed-window limiter; returns (allowed, retry_after_seconds)."""
+    client = get_redis_client()
+    window = int(time.time() // 60)
+    key = _rate_key(sender, window)
+    count = client.incr(key)
+    if count == 1:
+        client.expire(key, 61)  # outlives the window so the next one starts clean
+    retry_after = 60 - int(time.time() % 60)
+    return count <= limit_per_minute, retry_after
 
 
 def append_message(sender: str, role: str, content: str) -> None:

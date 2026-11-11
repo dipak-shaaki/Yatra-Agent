@@ -9,7 +9,7 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 - **Section-aware chunking** — corpus Markdown is split on `##` headings instead of arbitrary character counts, preserving semantic boundaries.
 - **Cost-aware turn handling** — a regex fast path answers greetings/acknowledgments with 0 LLM calls; an LLM classifier catches the rest. Repeated filler triggers a loop break.
 - **Conversation memory** — Redis stores per-session history and the filler counter.
-- **SSE streaming** — `/chat?stream=true` streams the answer token-by-token.
+- **SSE streaming** — `POST /api/v1/chat` with `{"query": ..., "stream": true}` streams the answer token-by-token; sessions are minted via `POST /api/v1/session` and rate-limited per token.
 - **Evaluation harness** — retrieval metrics (Precision@K, Recall@K, MRR), end-to-end functional eval, and an LLM-based faithfulness judge.
 
 ## Tech Stack

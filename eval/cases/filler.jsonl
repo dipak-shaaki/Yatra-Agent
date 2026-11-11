@@ -1,0 +1,2 @@
+{"id": "filler_001", "question": "thanks", "expected_answer": "A brief acknowledgment or friendly sign-off; no travel content is needed", "source_docs": [], "source_chunks": [], "expected_tools": [], "category": "filler", "difficulty": "easy"}
+{"id": "filler_002", "question": "ok bye", "expected_answer": "A brief farewell; no travel content is needed", "source_docs": [], "source_chunks": [], "expected_tools": [], "category": "filler", "difficulty": "easy"}

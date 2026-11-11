@@ -1,97 +1,163 @@
 """
-Retrieval-level eval: Precision@K, Recall@K, MRR against hybrid_search().
-No LLM calls, no server needed.
+Retrieval eval: chunk-level Precision@K / Recall@K / MRR of the retriever
+against the labeled `source_chunks` of every eval case that has them.
+No LLM calls, no server needed — this isolates retrieval quality.
 
-Skips word-overlap "groundedness" scoring: it cannot tell a correct fact
-from a wrong one when vocabulary overlaps (e.g. "permits cost NPR 50,000"
-would pass even if the source said NPR 10,000). Faithfulness uses an LLM
-judge instead.
+Also doubles as an ablation harness (--retriever dense|bm25 shows what the
+other half of hybrid buys) and as a CI gate: --gate-* thresholds exit
+nonzero when missed. Run as `python scripts/eval_retrieval.py` — the
+sys.path bootstrap makes `app` importable without PYTHONPATH.
 """
 
+import argparse
 import json
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.hybrid_retriever import hybrid_search
 
-EVAL_DIR = Path("eval/cases")
-K_VALUES = [3, 5, 10]
+# The agent's tools retrieve n_results=5; score retrieval at that size.
+K = 5
 
 
-def load_cases_with_source_docs() -> list[dict]:
-    """Only cases with non-empty source_docs are meaningful for retrieval eval —
-    out_of_scope/filler cases have none by design, so they're skipped here."""
+def _retrievers() -> dict[str, Callable[[str], list[str]]]:
+    """Each retriever maps a query to its top-K chunk ids (ranked)."""
+    from app.db.chroma.client import query_collection
+    from app.retrieval.embeddings import embed_query
+
+    def dense(query: str) -> list[str]:
+        return query_collection(embed_query(query), n_results=K)["ids"][0]
+
+    def bm25(query: str) -> list[str]:
+        return [chunk_id for chunk_id, _ in get_bm25_index().search(query, K)]
+
+    return {
+        "hybrid": lambda q: [r["id"] for r in hybrid_search(q, n_results=K)],
+        "dense": dense,
+        "bm25": bm25,
+    }
+
+
+def load_cases_with_chunks(eval_dir: Path) -> list[dict]:
+    """Only cases that are retrieval-scoreable: they must label source_chunks
+    AND expect search_destinations — the only tool that runs hybrid_search.
+    Discovery/budget questions go through the metadata tools instead, and
+    out_of_scope/filler/unclear cases have no labels by design."""
     cases = []
-    for jsonl_file in sorted(EVAL_DIR.glob("*.jsonl")):
+    for jsonl_file in sorted(eval_dir.glob("*.jsonl")):
         with open(jsonl_file) as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                case = json.loads(line)
-                if case.get("source_docs"):
-                    cases.append(case)
+                if line.strip():
+                    case = json.loads(line)
+                    if case.get("source_chunks") and "search_destinations" in case.get(
+                        "expected_tools", []
+                    ):
+                        cases.append(case)
     return cases
 
 
-def precision_recall_mrr_at_k(
-    retrieved_source_files: list[str], expected_docs: list[str], k: int
-) -> dict:
-    top_k = retrieved_source_files[:k]
-    # retrieved chunk source_file looks like "manaslu_circuit.md" — expected_docs are "manaslu_circuit"
-    top_k_stems = [f.replace(".md", "") for f in top_k]
-
-    hits = [doc for doc in top_k_stems if doc in expected_docs]
-    precision = len(hits) / k if k > 0 else 0
-    recall = len(set(hits)) / len(set(expected_docs)) if expected_docs else 0
-
+def precision_recall_rr(retrieved: list[str], expected: list[str]) -> dict:
+    top_k = retrieved[:K]
+    hits = [chunk_id for chunk_id in top_k if chunk_id in expected]
     rr = 0.0
-    for rank, doc in enumerate(top_k_stems, start=1):
-        if doc in expected_docs:
+    for rank, chunk_id in enumerate(top_k, start=1):
+        if chunk_id in expected:
             rr = 1 / rank
             break
+    return {
+        "precision": len(hits) / K,
+        "recall": len(set(hits)) / len(set(expected)),
+        "rr": rr,
+    }
 
-    return {"precision": precision, "recall": recall, "rr": rr}
 
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--eval-dir",
+        type=Path,
+        default=PROJECT_ROOT / "eval" / "cases",
+        help="Directory of *.jsonl eval cases",
+    )
+    parser.add_argument(
+        "--retriever",
+        choices=sorted(_retrievers()),
+        default="hybrid",
+        help="Retrieval path to score (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--gate-precision",
+        type=float,
+        default=0.15,
+        help=f"Fail if mean Precision@{K} below this (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--gate-recall",
+        type=float,
+        default=0.85,
+        help=f"Fail if mean Recall@{K} below this (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--gate-mrr",
+        type=float,
+        default=0.70,
+        help=f"Fail if mean MRR@{K} below this (default: %(default)s)",
+    )
+    args = parser.parse_args()
 
-def main():
-    cases = load_cases_with_source_docs()
-    print(f"Evaluating retrieval on {len(cases)} cases with labeled source_docs\n")
+    # Gate floors are calibrated ~10-15% below current hybrid numbers
+    # (P=0.20 / R=0.96 / MRR=0.83). Precision tops out near |expected|/K
+    # (usually 1 labeled chunk per question) — do not "fix" the low bar by
+    # raising it without relabeling more chunks per case.
+    cases = load_cases_with_chunks(args.eval_dir)
+    retrieve = _retrievers()[args.retriever]
+    print(f"Scoring {args.retriever} retrieval on {len(cases)} cases (K={K})\n")
 
-    results_by_k = {k: [] for k in K_VALUES}
-
+    metrics = []
+    misses = []
     for case in cases:
-        retrieved = hybrid_search(case["question"], n_results=max(K_VALUES))
-        retrieved_source_files = [r["metadata"]["source_file"] for r in retrieved]
-
-        print(f"[{case['id']}] {case['question']}")
-        print(f"  expected: {case['source_docs']}")
+        retrieved = retrieve(case["question"])
+        m = precision_recall_rr(retrieved, case["source_chunks"])
+        metrics.append(m)
+        marker = ""
+        if m["rr"] == 0.0:  # none of the labeled chunks made the top K
+            marker = "  <-- MISS"
+            misses.append(case["id"])
         print(
-            f"  retrieved (top 5): {[f.replace('.md', '') for f in retrieved_source_files[:5]]}"
+            f"[{case['id']}] p={m['precision']:.2f} r={m['recall']:.2f} "
+            f"rr={m['rr']:.2f}{marker}"
         )
 
-        for k in K_VALUES:
-            metrics = precision_recall_mrr_at_k(
-                retrieved_source_files, case["source_docs"], k
-            )
-            results_by_k[k].append(metrics)
-            print(
-                f"  @{k}: precision={metrics['precision']:.2f} recall={metrics['recall']:.2f} rr={metrics['rr']:.2f}"
-            )
-        print()
+    n = len(metrics)
+    mean_precision = sum(m["precision"] for m in metrics) / n
+    mean_recall = sum(m["recall"] for m in metrics) / n
+    mean_rr = sum(m["rr"] for m in metrics) / n
+    print("\n" + "=" * 60)
+    print(
+        f"{args.retriever}: Precision@{K}={mean_precision:.3f}  "
+        f"Recall@{K}={mean_recall:.3f}  MRR@{K}={mean_rr:.3f}  "
+        f"({len(misses)} full misses: {', '.join(misses) or 'none'})"
+    )
 
-    print("=" * 60)
-    print("AGGREGATE RESULTS")
-    print("=" * 60)
-    for k in K_VALUES:
-        avg_precision = sum(r["precision"] for r in results_by_k[k]) / len(
-            results_by_k[k]
-        )
-        avg_recall = sum(r["recall"] for r in results_by_k[k]) / len(results_by_k[k])
-        mrr = sum(r["rr"] for r in results_by_k[k]) / len(results_by_k[k])
-        print(
-            f"K={k}: Precision@{k}={avg_precision:.3f}  Recall@{k}={avg_recall:.3f}  MRR@{k}={mrr:.3f}"
-        )
+    gates = {
+        f"precision>={args.gate_precision}": mean_precision >= args.gate_precision,
+        f"recall>={args.gate_recall}": mean_recall >= args.gate_recall,
+        f"mrr>={args.gate_mrr}": mean_rr >= args.gate_mrr,
+    }
+    failed = [name for name, ok in gates.items() if not ok]
+    for name, ok in gates.items():
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+    if failed:
+        print(f"\nRetrieval gate FAILED for {args.retriever}")
+        return 1
+    print(f"\nRetrieval gate passed for {args.retriever}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

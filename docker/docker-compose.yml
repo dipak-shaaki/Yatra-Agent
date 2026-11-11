@@ -7,5 +7,25 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: yatra-api
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:?set GROQ_API_KEY before running compose}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    # chroma_db and the HF embedding model survive rebuilds in named volumes
+    volumes:
+      - chroma_data:/app/data/chroma_db
+      - hf_cache:/cache/huggingface
+    depends_on:
+      - redis
+
 volumes:
   redis_data:
+  chroma_data:
+  hf_cache:

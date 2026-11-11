@@ -13,27 +13,29 @@ from app.data_ingestion.corpus_meta import get_destinations
 
 _destination_count = len(get_destinations())
 
-GREETING_PATTERNS = [
-    r"^hi+$",
-    r"^hello+$",
-    r"^hey+$",
-    r"^namaste$",
-    r"^good (morning|afternoon|evening)$",
-    r"^yo+$",
-    r"^h(ey|i|ello)\s+(bro|there|friend|man)$",
-]
-ACKNOWLEDGMENT_PATTERNS = [
-    r"^(kk?|sure|alright|got it|cool|nice|great|thanks?( you)?|thank you)$"
-]
-FAREWELL_PATTERNS = [r"^(bye|goodbye|see you|take care)$"]
+# One dict instead of parallel pattern/category lists: the category can
+# never drift out of sync with the pattern it belongs to.
+FILLER_PATTERNS: dict[str, list[str]] = {
+    "greeting": [
+        r"^hi+$",
+        r"^hello+$",
+        r"^hey+$",
+        r"^namaste$",
+        r"^good (morning|afternoon|evening)$",
+        r"^yo+$",
+        r"^h(ey|i|ello)\s+(bro|there|friend|man)$",
+    ],
+    "acknowledgment": [
+        r"^(kk?|sure|alright|got it|cool|nice|great|thanks?( you)?|thank you)$"
+    ],
+    "farewell": [r"^(bye|goodbye|see you|take care)$"],
+}
 
-ALL_PATTERNS = GREETING_PATTERNS + ACKNOWLEDGMENT_PATTERNS + FAREWELL_PATTERNS
-CATEGORIES = (
-    ["greeting"] * len(GREETING_PATTERNS)
-    + ["acknowledgment"] * len(ACKNOWLEDGMENT_PATTERNS)
-    + ["farewell"] * len(FAREWELL_PATTERNS)
-)
-COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in ALL_PATTERNS]
+COMPILED_PATTERNS = [
+    (re.compile(pattern, re.IGNORECASE), category)
+    for category, patterns in FILLER_PATTERNS.items()
+    for pattern in patterns
+]
 
 TEMPLATED_REPLIES = {
     "greeting": [
@@ -59,7 +61,7 @@ def classify_stage1(message: str) -> str | None:
     purely filler, otherwise None."""
     stripped = message.strip()
 
-    for pattern, category in zip(COMPILED_PATTERNS, CATEGORIES):
+    for pattern, category in COMPILED_PATTERNS:
         if pattern.match(stripped):
             return category
 

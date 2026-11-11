@@ -18,33 +18,33 @@ decides between zero-, one-, or many-LLM-call paths, and then by an
 
 ```
 Browser / CLI / eval harness
-            │  HTTP (JSON or SSE)
-            ▼
-      FastAPI app ───────────────┐
-            │                    │
-            ▼                    ▼
-     Turn Handler          Admin document upsert
-   (stage1 + stage2 +     (corpus ingestion pipeline)
-    loop breaker)
-            │
-            ▼
-     Agent loop (Groq function calling)
-            │
-  ┌─────────┼──────────┬─────────────┐
-  ▼         ▼          ▼             ▼
-check_   search_    filter_by_   compare_       budget /
-scope    destinations criteria    destinations   context tools
-            │
-            ▼
-   Hybrid retriever (dense + sparse + RRF)
-            │
-      ┌─────┴─────┐
-      ▼           ▼
-    Chroma       BM25          Redis (memory + filler counter)
+        │  HTTP (JSON or SSE, X-Session-Token)
+        ▼
+   FastAPI app ──────────────────────┐
+        │                             │
+        ▼                             ▼
+ Turn Handler                    Admin document upsert
+ (stage1 regex fast-path,        (corpus ingestion
+  stage2 LLM classifier,          pipeline)
+  loop breaker)
+        │
+        │ new_question only — unclear/out_of_scope/filler
+        │ get templated replies and never reach the agent
+        ▼
+ Agent loop (Groq function calling, streaming)
+        │
+        ├─ search_destinations ──► hybrid retriever ──► Chroma + BM25
+        ├─ filter_by_criteria ───► corpus metadata (frontmatter model)
+        ├─ compare_destinations ─► corpus chunks + metadata
+        └─ calculate_budget ─────► corpus metadata
+
+ Redis: session tokens, history, filler counter, rate limit
 ```
 
-Every turn ends by appending the user message and the final answer to the
-session's Redis history so follow-up questions have context.
+Out-of-scope and unclear turns are answered by the classifier branch and
+never reach the agent loop. Every completed turn appends the user message
+and the final answer to the session's Redis history so follow-up questions
+have context.
 
 ---
 
@@ -55,16 +55,24 @@ session's Redis history so follow-up questions have context.
 - `app/main.py` — builds the FastAPI app, wires routers under `/api/v1`,
   registers `/health`, and preloads the embedding model and Chroma collection
   in the lifespan hook so the first request avoids cold-load latency.
-- `app/routers/chat_router.py` — `POST /api/v1/chat` accepts `query`, `sender`,
-  and `stream` as query parameters. With `stream=false` it returns
-  `{"answer", "retrieved_context"}`; with `stream=true` it returns a
-  Server-Sent Events stream of `{chunk}` payloads terminated by `[DONE]`.
-  Two debug endpoints expose `check_scope` and `search_destinations` directly
-  for manual tool testing.
+- `app/routers/chat_router.py`:
+  - `POST /api/v1/session` mints a server-generated session token (the
+    caller's identity for all later calls).
+  - `POST /api/v1/chat` takes a JSON body `{query, stream}` and the
+    `X-Session-Token` header. The token is validated, then a fixed-window
+    rate limit (`chat_rate_limit_per_minute`, default 30) is enforced per
+    token — 401 for missing/unknown tokens, 429 with `Retry-After` when
+    over the limit, 503 (fail-closed) when Redis is unreachable.
+    `stream=true` returns SSE `{chunk}` payloads terminated by `[DONE]`
+    (plus a final `{retrieved_context, tools_called}` event when
+    `EXPOSE_EVAL_CONTEXT=true`); `stream=false` returns `{answer}`.
+- `app/routers/dependencies.py` — `require_admin` dependency: mutating
+  endpoints need `X-Admin-Token` matching `ADMIN_API_KEY` (403 on mismatch,
+  503 if the key is not configured server-side).
 - `app/routers/documents_routers.py` — `POST /api/v1/documents/upsert`
-  ingests or updates one destination document (see §5.3). Protected by the
-  `X-Admin-Token` header against `ADMIN_API_KEY`; returns 503 if the key is
-  not configured.
+  ingests or updates one destination document (§5.3), admin-guarded.
+- Debug endpoints (`/api/v1/debug/*`) expose `search_destinations`
+  directly for manual tool testing; also admin-guarded.
 
 ### 2.2 Turn Handler
 
@@ -75,70 +83,73 @@ configuration):
 
 1. **Stage 1 — rule fast-path** (`app/agent/nodes/stage1_rules_node.py`):
    regex match on pure filler (greetings, acknowledgments, farewells).
-   Zero LLM calls. The patterns and templated replies are deliberately
-   hardcoded here; they are curated copy that should never be duplicated
-   elsewhere.
+   Zero LLM calls. Patterns and reply pools live in one `FILLER_PATTERNS`
+   dict (category → patterns) compiled once at import; they are curated
+   copy that should never be duplicated elsewhere.
 2. **Stage 2 — LLM classifier** (`app/agent/nodes/stage2_classifier_node.py`,
    **async**): for anything the regex did not match, classify the turn as
-   `new_question` / `filler` / `unclear`. It passes the assistant's last
-   message as context so short engaged replies ("yes", "I wanna compare")
-   are not misread as filler. Fails safe to `new_question` on any error.
+   `new_question` / `filler` / `unclear` / `out_of_scope`. It passes the
+   assistant's last message as context so short engaged replies ("yes",
+   "I wanna compare") are not misread as filler. `unclear` and `out_of_scope`
+   get templated replies and never reach the agent. Fails safe to
+   `new_question` on any error — an over-cautious refusal is worse than a
+   question that gets answered.
 3. **Loop breaker** (`app/agent/nodes/loop_breaker_node.py`): a per-session
-   Redis counter that trips after `FILLER_LOOP_THRESHOLD` consecutive filler
+   Redis counter that trips after `filler_loop_threshold` consecutive filler
    turns and nudges the user back to a real question, then resets.
-4. **Agent node** — runs the full async Groq tool-calling loop (§ 2.3).
+4. **Agent node** — runs the full async Groq tool-calling loop (§2.3).
 
-`app/services/chat_service.py` is now thin glue over the graph: it delegates
-to `TurnGraph.run()` / `run_stream()` and emits the `turn_handled` log line.
+`app/services/chat_service.py` is thin glue over the graph: it delegates to
+`TurnGraph.run()` / `run_stream()` and emits the `turn_handled` log line.
 All Redis and sync-tool calls inside the graph and the agent run through
 `asyncio.to_thread` so they never block the event loop.
 
-The streaming path (`run_stream()`) mutates a caller-owned `Turn` (async
-generators cannot return values) and the router reads it afterwards, emitting
-a final SSE metadata event (`{"retrieved_context": [...]}`) before `[DONE]`.
+Both delivery modes share one streaming loop: `run_stream()` mutates a
+caller-owned `Turn` (async generators cannot return values); the JSON path
+simply discards the deltas and reads the assembled reply, the SSE path
+forwards them.
 
 ### 2.3 Agent loop
 
-`app/agent/agent.py` implements the tool-calling loop (now fully async,
-using `AsyncGroq`):
+`app/agent/agent.py` implements a single streaming tool-calling loop
+(`run_agent_stream`, `AsyncGroq`), used by both delivery modes:
 
 1. Build `messages` = system prompt + Redis history (limited by
-   `CONVERSATION_HISTORY_LIMIT`, fetched via `asyncio.to_thread`) + the
+   `conversation_history_limit`, fetched via `asyncio.to_thread`) + the
    user query.
-2. Call Groq with the tool schemas from `app/agent/tool_registry.py`.
-3. If the model returns no tool calls — done; return `{answer,
-   retrieved_context}`.
-4. Otherwise append the assistant message **with** `tool_calls`, execute each
-   call (via `asyncio.to_thread`, since the tool functions are synchronous),
-   append each result as a `tool` message, and loop (bounded by
-   `MAX_TOOL_ITERATIONS`, then a graceful apology message).
+2. Call Groq with the tool schemas from `app/agent/tool_registry.py`,
+   `stream=True`, `reasoning_effort="low"` for reasoning models
+   (`reasoning_params` in the Groq client) so reasoning tokens do not eat
+   the answer budget.
+3. Content deltas are yielded as they arrive. Tool-call deltas are buffered
+   per `tool_calls` index to reassemble multi-part function names/arguments.
+   Token usage rides `x_groq.usage` on the final chunk and is logged per
+   round (`llm_call_stream`).
+4. If the model returns no tool calls: done. Empty final content (reasoning
+   tokens ate the budget) triggers the `agent_empty_content` guard and a
+   graceful error reply instead of an empty stream.
+5. Otherwise append the assistant message **with** `tool_calls`, execute
+   **independent calls in parallel** (`asyncio.gather`), append each result
+   as a `tool` message, and loop — bounded by `max_tool_iterations`, then
+   a graceful apology message.
 
-Two entry points:
-
-- `run_agent(query, sender)` — non-streaming. Returns `{"answer",
-  "retrieved_context"}`. It captures every chunk actually retrieved this turn
-  so the faithfulness judge can score against exactly what the agent saw.
-- `run_agent_stream(query, sender)` — streaming. Yields text deltas; tool-call
-  rounds happen silently in between. Writes the retrieved chunks into the
-  caller-supplied `retrieved_context` list (since async generators cannot
-  return values).
-
-Content deltas are buffered per `tool_calls` index to reassemble multi-part
-function names/arguments.
+State (answer, retrieved context, tools called) is written into a
+caller-owned `AgentResult` dataclass, since async generators cannot return
+values. Captured context is what the eval judge scores against — exactly
+what the agent saw, not a re-retrieval.
 
 ### 2.4 Tools
 
-`app/agent/tools/` holds the six tool implementations plus the name resolver:
+`app/agent/tools/` holds four implementations. The old `check_scope` and
+`get_conversation_context` tools were deleted — scope is enforced upstream
+by the classifier, history is already in the prompt:
 
 | Tool | Purpose |
 | --- | --- |
-| `check_scope_tool` | Guardrail. Keyword fast-path for obvious out-of-scope phrases, otherwise an LLM classifier. **Fails safe** (refuses) on error — an out-of-scope slip is worse than an over-cautious refusal. |
-| `search_destinations_tool` | Wraps `hybrid_search()`; flattens results to `{destination, section, text}` for the LLM. Most-called tool. |
-| `compare_destinations_tool` | Resolves names, then queries Chrome for the comparison sections (`Overview`, `Difficulty`, `Duration`, `Estimated Budget`, `Best Time to Visit`, `Permits`) per destination. Unknown names are reported under `_unresolved`. |
-| `filter_by_criteria_tool` | Metadata-filtered discovery (province / difficulty / type), deduped by destination name, default `max_results=10`. |
-| `calculate_budget_estimate_tool` | Returns raw budget + typical duration + requested days. Deliberately does **no** arithmetic — corpus budget values are inconsistently formatted, so the LLM reasons over the raw estimate instead. |
-| `get_conversation_context_tool` | Recent message history for referential follow-ups ("that place"). |
-| `destination_resolver` | Alias map → exact corpus name (e.g. `abc` → `Annapurna Base Camp (ABC)`). |
+| `search_destinations_tool` | Wraps `hybrid_search()`; flattens results to `{id, text, metadata, score}` for the LLM. Most-called tool. |
+| `filter_by_criteria_tool` | Metadata-filtered discovery (province / difficulty / type) over the frontmatter model. Difficulty matches within ±1 level (the corpus's 1–5 scale is coarse); type tolerates plurals ("treks" → "trek"). Default `max_results=10`. |
+| `compare_destinations_tool` | Resolves names via the alias map, then queries corpus chunks for the comparison sections (`Overview`, `Difficulty`, `Duration`, `Estimated Budget`, `Best Time to Visit`, `Permits`) per destination. Unknown names are reported under `_unresolved`. |
+| `calculate_budget_estimate_tool` | Does the arithmetic in code: per-day budgets scale linearly with the requested day count; requests outside the typical day range are scaled proportionally and marked as extrapolations. The corpus stores numeric ranges + day bounds for exactly this. |
 
 `tool_registry.py` exports the schemas handed to Groq (`get_tool_schemas()`)
 and the dispatch map (`call_tool(name, **kwargs)`).
@@ -149,44 +160,51 @@ and the dispatch map (`call_tool(name, **kwargs)`).
 
 - **Dense**: `bge-base-en-v1.5` embeddings (`retrieval/embeddings.py`), query
   side gets the bge retrieval prefix, stored in Chroma
-  (`db/chroma/client.py`, cosine space).
+  (`db/chroma/client.py`, cosine space). Sentence-transformers is imported
+  lazily so config-only imports stay fast.
 - **Sparse**: in-memory BM25 (`retrieval/bm25_index.py`) over the same chunks,
   with comma-in-number tokenization normalisation (`5,106` → `5106`).
-- **Fusion**: Reciprocal Rank Fusion (`retrieval/fusion.py`, `k=60`).
+- **Fusion**: Reciprocal Rank Fusion (`retrieval/fusion.py`, `rrf_k=60`),
+  each ranker contributing `candidate_pool` (default 10) candidates.
 
-The result-set is rehydrated through BM25's chunk lookup and returned as
-`{id, text, metadata, score}`.
+The BM25 index is cached per process against `(corpus_dir, corpus_version)`;
+the version lives in Redis (`yatra:corpus_version`) and is bumped by every
+document upsert, so other workers rebuild automatically instead of serving a
+silently stale index. If Redis is unreachable the cached index is served
+(no thrash). The fused result-set is rehydrated through BM25's chunk lookup
+and returned as `{id, text, metadata, score}`.
 
 ---
 
 ## 3. Configuration Surface
 
 Single source of truth: `app/core/config.py` (pydantic-settings) reads
-`app/core/.env`; `app/configs/agent_config.py` holds agent-level tunables.
-Everything else imports from these two.
+`app/core/.env` plus real environment variables. The old
+`app/configs/agent_config.py` is gone — every tunable, agent-level included,
+lives in `Settings`.
 
-| Setting | Default | Used by |
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| `app_name` | `Yatra` | FastAPI title, `/health` |
-| `environment` | `development` | — |
 | `groq_api_key` | **required** | Groq client |
-| `admin_api_key` | `None` | Protects `documents/upsert`; if unset the endpoint returns 503 |
-| `redis_url` | `redis://localhost:6379/0` | Redis client |
+| `agent_model` | `openai/gpt-oss-20b` | The agent/classifier model |
+| `judge_model` | `llama-3.3-70b-versatile` | Eval judge — deliberately a *different* model than the generator, or the judge inherits the generator's blind spots |
+| `reasoning_effort` | `low` | Sent to reasoning models only |
+| `final_answer_max_tokens` | `2000` | Final answer cap |
+| `max_tool_iterations` | `5` | Tool-loop budget |
+| `conversation_history_limit` | `12` | Messages injected per turn |
+| `max_stored_history_messages` | `20` | Redis list cap (ltrim) |
+| `session_ttl_seconds` | `7200` | Session token TTL |
+| `filler_loop_threshold` | `3` | Consecutive filler turns before break |
+| `candidate_pool` | `10` | Per-ranker results fetched before RRF |
+| `rrf_k` | `60` | Standard RRF constant |
 | `chroma_persist_dir` | `<project>/data/chroma_db` | Chroma client |
 | `corpus_dir` | `<project>/data/corpus` | chunking, BM25, document service |
 | `embedding_model` | `BAAI/bge-base-en-v1.5` | embeddings |
-
-Agent tunables in `app/configs/agent_config.py`:
-
-| Constant | Default | Meaning |
-| --- | --- | --- |
-| `AGENT_MODEL` | `openai/gpt-oss-20b` | All agent/classifier/judge LLM calls |
-| `MAX_TOOL_ITERATIONS` | `5` | Tool-loop budget |
-| `CONVERSATION_HISTORY_LIMIT` | `12` | Messages injected per turn |
-| `MAX_STORED_HISTORY_MESSAGES` | `20` | Redis list cap (ltrim) |
-| `SESSION_TTL_SECONDS` | `7200` | Session/TTL, also used by loop breaker |
-| `FILLER_LOOP_THRESHOLD` | `3` | Consecutive filler turns before break |
-| `FINAL_ANSWER_MAX_TOKENS` | `400` | Final answer cap |
+| `hf_offline` | `false` | Opt-in `HF_HUB_OFFLINE` for airgapped runs |
+| `admin_api_key` | `None` | Protects admin endpoints; unset → 503 |
+| `chat_rate_limit_per_minute` | `30` | Fixed-window limit per session token |
+| `expose_eval_context` | `false` | Adds `retrieved_context`/`tools_called` to chat responses (eval/debug) |
+| `redis_url` | `redis://localhost:6379/0` | Redis client |
 
 File-system defaults are anchored to the project root, not the process CWD,
 so the app behaves the same regardless of launch directory.
@@ -198,30 +216,40 @@ so the app behaves the same regardless of launch directory.
 ### 4.1 Corpus documents (`data/corpus/*.md`)
 
 Each destination is one Markdown file: a YAML frontmatter block (name,
-province, district, type, difficulty, time_required, max_altitude_m, permits,
-budget, etc.) followed by `##`-section bodies. 10 destinations, curated for
-domestic tourism.
+aliases, province, district, tags, difficulty, days_min/max, budget bounds +
+`budget_per_day`, permits, etc.) followed by `##`-section bodies. 10
+destinations, curated for domestic tourism.
 
-### 4.2 Chunks
+### 4.2 Typed metadata (`app/data_ingestion/corpus_meta.py`)
+
+Frontmatter is parsed into a **pydantic model** (`Destination`) — malformed
+or missing fields fail loudly at load time instead of poisoning queries.
+The module also provides the alias resolver (`resolve_destination`,
+e.g. `abc` → `Annapurna Base Camp (ABC)`) and `get_corpus_chunks()`, the
+in-memory chunk list BM25 rehydrates from.
+
+### 4.3 Chunks
 
 `app/data_ingestion/chunker.py` parses frontmatter and splits sections:
 
-- Text before the first `##` header becomes an `Overview` chunk (a fix for an
-  early bug that silently dropped it).
+- Text before the first `##` header becomes an `Overview` chunk.
 - Each `## Section` becomes one chunk.
-- Chunk IDs are `<filename>__<section>` (or `__overview`).
+- Chunk IDs are `<filename>__<section>` (or `__overview`), e.g.
+  `manaslu_circuit__permits`.
 - Metadata = flattened frontmatter + `section_title` + `source_file`.
-  **`None` frontmatter values are dropped**, not stringified to `"None"`,
-  so absent attributes never poison Chroma metadata.
+  **`None` frontmatter values are dropped**, not stringified to `"None"`.
 
-### 4.3 Conversation memory (`app/components/redis/session_store.py`)
+### 4.4 Conversation memory & sessions (`app/components/redis/session_store.py`)
 
-Each sender maps to a Redis list `session:<sender>:messages` of JSON
-`{"role", "content"}` objects, capped at `MAX_STORED_HISTORY_MESSAGES`, TTL
-reset on every write. A separate `session:<sender>:filler_count` key feeds
-the loop breaker.
+Each sender (the session token) maps to a Redis list
+`session:<sender>:messages` of JSON `{"role", "content"}` objects, capped at
+`max_stored_history_messages`, TTL reset on every write. Separate keys hold
+the filler count (`:filler_count`) and the fixed-window rate-limit counter.
+Session tokens are server-minted random strings with TTL
+`session_ttl_seconds`; they are the sender identity, so clients cannot read
+or overwrite another session's history.
 
-### 4.4 Vector store (`app/db/chroma/client.py`)
+### 4.5 Vector store (`app/db/chroma/client.py`)
 
 Persistent Chroma under `data/chroma_db`, collection `yatra_destinations`,
 cosine space. Chunks are upserted by ID; `delete_chunks_by_source_file`
@@ -235,6 +263,7 @@ removes stale chunks for a file before re-ingesting.
 
 Chunk the corpus → embed → reset the Chroma collection → upsert everything.
 Run after the corpus changes wholesale, or to initialise a fresh checkout.
+Runs as a plain `python scripts/...` from anywhere (sys.path bootstrap).
 
 ### 5.2 On-disk persistence
 
@@ -244,47 +273,71 @@ markdown corpus itself.
 
 ### 5.3 Document upsert (`app/services/document_service.py`)
 
-`POST /api/v1/documents/upsert` validates frontmatter, writes
-`data/corpus/<filename>.md`, re-chunks the single file, deletes that file's
-old chunks from Chroma, re-embeds, upserts, and resets the BM25 cache so the
-index rebuilds from disk on next use. Returns `{filename, is_update,
-old_chunks_deleted, new_chunks_written, chunk_ids}`.
+`POST /api/v1/documents/upsert` validates the frontmatter against the
+pydantic model, writes `data/corpus/<filename>.md`, re-chunks the single
+file, deletes that file's old chunks from Chroma, re-embeds, upserts, and
+bumps the Redis corpus version so every worker's BM25 cache invalidates.
+Returns `{filename, is_update, old_chunks_deleted, new_chunks_written,
+chunk_ids}`.
 
 ---
 
 ## 6. Evaluation
 
-All eval tools live in `scripts/` (the older `eval/run_eval.py` is removed —
-superseded):
+All eval tooling lives in `scripts/` and `eval/`:
 
 | Script | What it measures | Needs |
 | --- | --- | --- |
-| `scripts/eval_retrieval.py` | Precision@K / Recall@K / MRR against labeled `source_docs` cases | Chroma + embedding model (no LLM) |
-| `scripts/run_eval.py` | End-to-end per-case behavior over HTTP (12 cases) | Running server + Groq |
-| `scripts/eval_faithfulness.py` | LLM-as-judge over `eval/results.jsonl` using the **captured** `retrieved_context` | Running service already having produced results |
+| `scripts/eval_retrieval.py` | Chunk-level Precision@5 / Recall@5 / MRR@5 against labeled `source_chunks`, with `--gate-*` thresholds that exit nonzero; `--retriever dense\|bm25` doubles as a hybrid ablation | Built Chroma index + embedding model (no LLM, no server) |
+| `scripts/run_eval.py` | End-to-end per-case behavior over HTTP; mints a fresh session per case; captures `retrieved_context` + `tools_called` per turn (server must run with `EXPOSE_EVAL_CONTEXT=true`) | Running server + Groq |
+| `scripts/eval_answers.py` | LLM answer judge over `eval/results.jsonl`, per-category verdict requirements, tool-selection accuracy (any-of), p50/p95 latency; writes `eval/judged.jsonl` | Groq (judge model) |
 
-Evaluation cases: `eval/cases/basic_eval.jsonl` (12 cases: factual,
-comparison, discovery, budget, out-of-scope, adversarial, conflicting-source,
-filler). Results land in `eval/results.jsonl` and
-`eval/faithfulness_results.jsonl`.
+Evaluation cases: `eval/cases/*.jsonl` — **60 cases across 9 categories**
+(factual 20, comparison 6, discovery 8, budget 8, out_of_scope 8,
+adversarial 4, ambiguous_conflicting 2, filler 2, unclear 2). Every case
+labels `source_docs`, `source_chunks`, `expected_tools`, `category`,
+`difficulty`, plus per-case `requires_refusal` / `hedge` flags; all facts
+are verified against the corpus.
 
-`eval/faithfulness_judge.py` is a strict fact-checker: given the retrieved
-context and the answer, it returns `{faithful, unsupported_claims, notes}`.
-Returns `faithful: null` on judge failure rather than a confident wrong
-verdict.
+Two design notes:
+
+- The retrieval eval scores only cases whose expected path is
+  `search_destinations` — discovery/budget questions go through the
+  metadata tools, so scoring them against hybrid search would measure
+  nothing. Gates are calibrated below current hybrid numbers
+  (P=0.20 / R=0.96 / MRR=0.83); precision tops out near
+  |expected|/K because most cases label a single chunk.
+- `eval/answer_judge.py` (model: `judge_model`, different from the
+  generator) returns `faithful` / `correct` / `refusal_correct` / `hedged`
+  (true/false/null). A case passes when every verdict its category
+  requires is true; cases that captured no context are not required to be
+  faithful to a context they never saw. Verdicts are null on judge failure
+  rather than a confident wrong verdict.
+
+CI (`.github/workflows/ci.yml`) runs ruff + compileall + pytest against a
+Redis service container, plus a separate `retrieval-eval` job that builds
+the index and runs the retrieval gate.
 
 ---
 
 ## 7. Tests
 
-- `tests/test_chunker.py` — pure-logic unit tests for the chunker, including
-  the `None`-metadata handling and the pre-header Overview capture.
-- `tests/test_app.py` — FastAPI smoke tests (`/health`, `/openapi.json`
-  routes). `TestClient` is used without entering the lifespan context so the
-  embedding model / Chroma are not warmed up during the test.
+- `tests/test_agent.py` — agent loop with a stubbed AsyncGroq: split-delta
+  tool-call reassembly, AgentResult capture, empty-content guard,
+  max-iterations bound.
+- `tests/test_app.py` — HTTP surface: sessions, auth failures, rate limit,
+  chat modes.
+- `tests/test_chunker.py` — chunker logic incl. `None`-metadata handling
+  and pre-header Overview capture.
+- `tests/test_corpus_meta.py` — frontmatter model + alias resolution.
+- `tests/test_eval_scripts.py` — eval harness logic (verdict requirements,
+  any-of tool selection, percentiles, retrieval metrics, prompt splicing).
+- `tests/test_frontmatter.py` — frontmatter parsing edge cases.
+- `tests/test_graph.py` — turn-handler routing per category.
+- `tests/test_retrieval_units.py` — RRF fusion and BM25Index (no Chroma).
+- `tests/test_tools.py` — the four tools against the real corpus.
 
-Run: `uv run pytest tests/ -v`. CI runs ruff + pytest on Python 3.13
-(`.github/workflows/ci.yml`).
+Run: `uv run pytest tests/ -v`. Agent/app tests need Redis on localhost:6379.
 
 ---
 
@@ -292,52 +345,58 @@ Run: `uv run pytest tests/ -v`. CI runs ruff + pytest on Python 3.13
 
 ### 8.1 Running
 
+Host (Redis via Docker):
+
 ```bash
 uv sync
 cp app/core/.env.example app/core/.env   # set GROQ_API_KEY
-docker compose -f docker/docker-compose.yml up -d   # Redis
-uv run python scripts/build_index.py               # initial index
+docker compose -f docker/docker-compose.yml up -d redis
+uv run python scripts/build_index.py
 uv run uvicorn app.main:app --reload
 ```
+
+Full stack in Docker (`Dockerfile` + `docker/docker-compose.yml`): the API
+image rebuilds the Chroma index from the baked-in corpus on boot and mounts
+named volumes for `chroma_db` and the HF model cache, so restarts are cheap.
 
 ### 8.2 Dependencies on external services at runtime
 
 - **Groq API** — every real agent turn, plus stage-2 classification.
-- **Redis** — conversation memory and filler counter. The lifespan hook
-  pings Redis at startup (warn-only — the app starts even if Redis is down)
-  and closes the connection on shutdown. Session memory silently degrades to
-  empty history when Redis is unreachable.
+- **Redis** — **required for chat**: session minting/validation and the
+  rate limit fail closed (503) when Redis is down; the startup ping is
+  warn-only so the app still boots for /health.
 - **Chroma** — persisted locally; preloaded at startup.
-- **Sentence-transformers / `bge-base-en-v1.5`** — preloaded at startup; with
-  `HF_HUB_OFFLINE=1` it expects the model in the local HF cache.
+- **Sentence-transformers / `bge-base-en-v1.5`** — preloaded at startup;
+  with `hf_offline=true` it expects the model in the local HF cache
+  (`HF_HOME`).
 
 ### 8.3 Security notes
 
-- `groq_api_key` is loaded only from the environment / `app/core/.env`, which
-  is gitignored. A committed `okay.zip` snapshot that packaged an old `.env`
-  has been removed from the working tree; **rewrite git history** to scrub it
-  if it was ever pushed:
-  `git filter-repo --path okay.zip --invert-paths`.
-- No user input is executed; the debug endpoints dispatch only to the six
-  registered tools.
+- `groq_api_key` is loaded only from the environment / `app/core/.env`,
+  which is gitignored.
+- Session tokens are server-minted and act as the sender identity;
+  clients cannot guess or forge another session's history. Redis outage
+  fails closed (503), never anonymous access.
+- Chat input is length-capped (`query` ≤ 2000 chars); no user input is
+  executed anywhere; debug endpoints dispatch only to registered tools.
 - `documents/upsert` writes only into the configured corpus directory and
   validates the filename to prevent path traversal. It is protected by
-  `X-Admin-Token` header against `ADMIN_API_KEY` (returns 403 if the header
-  is missing or wrong; 503 if the key is not configured on the server).
+  the `X-Admin-Token` header against `ADMIN_API_KEY` (403 on mismatch,
+  503 if the key is not configured server-side).
 - Redis, Chroma, and sync tool calls are dispatched via `asyncio.to_thread`
-  inside the agent loop and graph nodes so they never block the FastAPI event
-  loop.
+  inside the agent loop and graph nodes so they never block the FastAPI
+  event loop.
 
-### 8.4 Known limitations (unchanged by refactor)
+### 8.4 Known limitations
 
-1. **Streaming path does not capture `retrieved_context` or log token usage**
-   (`run_agent_stream`); the non-streaming path does. Faithfulness eval on
-   streamed turns is therefore not supported yet.
-2. **Budget estimates are approximate** by design — corpus budget text is
-   inconsistently formatted and the tool does not do arithmetic.
-3. **Latency** on real agent turns is ~3–4 s, higher under Groq rate limiting.
-4. **English-first corpus**; Nepali support is future work.
-5. **10-destination corpus** — a deliberate, documented scope decision.
+1. **Budget estimates are approximate** by design — the corpus ranges are
+   rough domestic-traveler estimates, and out-of-range day counts are
+   linear extrapolations the tool marks as such.
+2. **Latency** is dominated by Groq round trips (classifier + agent turns);
+   measure it rather than assume — `scripts/run_eval.py` records per-case
+   times and `scripts/eval_answers.py` reports p50/p95.
+3. **English-first corpus**; Nepali support is future work.
+4. **10-destination corpus** — a deliberate, documented scope decision.
 
 ---
 
@@ -346,31 +405,31 @@ uv run uvicorn app.main:app --reload
 ```
 app/
 ├── main.py                      # FastAPI app factory + lifespan
-├── configs/agent_config.py      # agent/LLM tunables (single source)
 ├── core/
-│   ├── config.py                # environment settings (pydantic-settings)
+│   ├── config.py                # all settings (pydantic-settings)
 │   └── logging_config.py        # stdout logging setup
-├── routers/                     # chat + documents + debug endpoints
+├── routers/                     # chat (+session/debug), documents, dependencies
 ├── services/                    # chat_service (turn handler), document_service
 ├── agent/
 │   ├── graph.py                 # TurnGraph — stage1 → stage2 → agent orchestration
-│   ├── agent.py                 # async Groq tool loop (streaming + non-streaming)
+│   ├── agent.py                 # streaming Groq tool loop (AgentResult)
 │   ├── tool_registry.py         # schemas + dispatch
 │   ├── nodes/                   # stage1, stage2, loop breaker
-│   └── tools/                   # 6 tools + destination_resolver
+│   └── tools/                   # 4 tools (search, filter, compare, budget)
 ├── components/
-│   ├── groq/client.py           # cached Groq client
+│   ├── groq/client.py           # cached Groq client + reasoning params
 │   └── redis/                   # client + session_store
 ├── db/chroma/client.py          # persistent vector store
 ├── retrieval/                   # hybrid_retriever, bm25_index, embeddings, fusion
-├── data_ingestion/chunker.py    # frontmatter + section chunking
-├── schemas/document_schema.py   # upsert request schema
+├── data_ingestion/             # chunker, corpus_meta (pydantic frontmatter model)
+├── schemas/                     # request/response schemas
 └── utils/logger.py              # structured event logger
 data/{corpus,raw,chroma_db}/     # source docs, JSON copies, persisted index
-eval/                            # cases, faithfulness judge, results
-scripts/                         # build_index, eval scripts
-tests/                           # chunker unit tests + app smoke tests
+eval/                            # 60 cases (9 categories) + answer judge
+scripts/                         # build_index, eval_retrieval, run_eval, eval_answers
+tests/                           # unit + integration tests (pytest)
 ui/                              # React + Vite chat frontend
-docker/docker-compose.yml        # Redis
+Dockerfile                       # API image
+docker/docker-compose.yml        # API + Redis
 docs/ARCHITECTURE.md             # this file
 ```

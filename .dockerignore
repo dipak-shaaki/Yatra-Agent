@@ -1,6 +1,23 @@
-.venv
-__pycache__
+# Python
+.venv/
+__pycache__/
 *.pyc
-.git
-data/chroma_db
+.ruff_cache/
+.pytest_cache/
+
+# Secrets — never bake into the image
 app/core/.env
+
+# Local state — built inside the container / mounted as volumes
+data/chroma_db/
+data/raw/
+
+# Not needed at runtime
+.git/
+.github/
+docs/
+ui/
+eval/
+tests/
+docker/
+*.zip

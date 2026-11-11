@@ -63,7 +63,7 @@ def bump_corpus_version() -> None:
 def _current_corpus_version() -> str:
     try:
         version = get_redis_client().get(CORPUS_VERSION_KEY)
-        return version.decode() if version else "0"
+        return version or "0"
     except Exception:
         return "0"  # Redis unavailable — serve the cached index, don't thrash
 

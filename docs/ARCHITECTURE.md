@@ -260,9 +260,11 @@ or overwrite another session's history.
 ### 4.5 Vector store (`app/db/chroma/client.py`)
 
 Persistent Chroma under `data/chroma_db`, collection `yatra_destinations`,
-cosine space. The collection records `embedding_model` + `embedding_dimension`
-in its metadata; startup verifies both against the configured/model dimensions
-and fails fast on a mismatch instead of silently returning garbage. Chunks are
+cosine space. The collection records `embedding_model`, the pinned
+`embedding_revision` (commit SHA) and `embedding_dimension` in its metadata;
+startup verifies all three and fails fast on a mismatch instead of silently
+returning garbage. The revision is pinned because an upstream retag keeps the
+same model name and dimension while changing the weights. Chunks are
 upserted by ID; `get_chunk_ids_by_source_file` + `delete_chunks(ids)` remove
 only the IDs that disappeared, after the new chunks are in place.
 

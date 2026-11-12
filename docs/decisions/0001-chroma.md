@@ -13,8 +13,8 @@ metadata tools. The store must persist locally (a checkout should work after
 ## Decision
 
 Use Chroma in persistent local mode (`data/chroma_db`), with the embedding
-model and dimension recorded in the collection metadata and verified at
-startup.
+model, pinned revision (commit SHA) and dimension recorded in the collection
+metadata and verified at startup.
 
 ## Consequences
 

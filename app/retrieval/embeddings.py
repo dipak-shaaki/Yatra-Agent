@@ -42,7 +42,9 @@ def get_embedding_model():
 
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(settings.embedding_model)
+    return SentenceTransformer(
+        settings.embedding_model, revision=settings.embedding_revision
+    )
 
 
 def embed_documents(texts: list[str]) -> list[list[float]]:

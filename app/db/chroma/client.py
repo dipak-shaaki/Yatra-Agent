@@ -26,6 +26,7 @@ def get_collection():
         metadata={
             "hnsw:space": "cosine",
             "embedding_model": settings.embedding_model,
+            "embedding_revision": settings.embedding_revision,
         },
     )
 
@@ -41,6 +42,7 @@ def verify_embedding_compat(dimension: int) -> None:
     collection = get_collection()
     metadata = dict(collection.metadata or {})
     stored_model = metadata.get("embedding_model")
+    stored_revision = metadata.get("embedding_revision")
     stored_dim = metadata.get("embedding_dimension")
 
     if stored_model and stored_model != settings.embedding_model:
@@ -48,6 +50,15 @@ def verify_embedding_compat(dimension: int) -> None:
             f"Embedding model mismatch: collection '{settings.collection_name}' "
             f"was built with '{stored_model}', settings say "
             f"'{settings.embedding_model}'. Rebuild the index or revert the setting."
+        )
+
+    # Same model name but different weights still produces incompatible
+    # vectors, so the pinned revision is checked too.
+    if stored_revision and stored_revision != settings.embedding_revision:
+        raise RuntimeError(
+            f"Embedding revision mismatch: collection '{settings.collection_name}' "
+            f"was built with revision '{stored_revision}', settings say "
+            f"'{settings.embedding_revision}'. Rebuild the index or revert the setting."
         )
 
     if stored_dim is None and collection.count() > 0:
@@ -66,6 +77,7 @@ def verify_embedding_compat(dimension: int) -> None:
 
     if (
         metadata.get("embedding_model") != settings.embedding_model
+        or metadata.get("embedding_revision") != settings.embedding_revision
         or metadata.get("embedding_dimension") != dimension
     ):
         # Chroma rejects `hnsw:space` in modify() ("changing the distance
@@ -76,6 +88,7 @@ def verify_embedding_compat(dimension: int) -> None:
         metadata.update(
             {
                 "embedding_model": settings.embedding_model,
+                "embedding_revision": settings.embedding_revision,
                 "embedding_dimension": dimension,
             }
         )
@@ -83,6 +96,7 @@ def verify_embedding_compat(dimension: int) -> None:
         log_event(
             "chroma_embedding_metadata_updated",
             embedding_model=settings.embedding_model,
+            embedding_revision=settings.embedding_revision,
             embedding_dimension=dimension,
         )
 

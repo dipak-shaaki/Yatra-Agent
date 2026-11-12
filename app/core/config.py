@@ -74,6 +74,10 @@ class Settings(BaseSettings):
 
     # Embeddings
     embedding_model: str = "BAAI/bge-base-en-v1.5"
+    # Pin the commit, not `main`: an upstream retag would otherwise change the
+    # weights under already-stored vectors (same name + dimension, so the
+    # startup check cannot catch it). Stored in Chroma metadata and verified.
+    embedding_revision: str = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"
     # Opt-in offline mode for airgapped deployments (sets HF_HUB_OFFLINE
     # before sentence-transformers loads). Off by default so first runs
     # can download the model.

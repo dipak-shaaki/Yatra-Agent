@@ -68,8 +68,24 @@ def test_verify_embedding_compat_backfills_legacy_metadata(temp_chroma) -> None:
     metadata = get_collection().metadata or {}
     assert metadata["embedding_dimension"] == 768
     assert metadata["embedding_model"] == get_settings().embedding_model
+    assert metadata["embedding_revision"] == get_settings().embedding_revision
 
     verify_embedding_compat(768)  # already backfilled -> no modify, no raise
+
+
+def test_verify_embedding_compat_rejects_revision_mismatch(
+    temp_chroma, monkeypatch
+) -> None:
+    """Same model name but different weights must fail fast: name + dimension
+    alone cannot detect an upstream retag, and the vectors would be garbage."""
+    reset_collection()
+    get_collection()
+
+    monkeypatch.setenv("EMBEDDING_REVISION", "deadbeef")
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="Embedding revision mismatch"):
+        verify_embedding_compat(768)
 
 
 def test_verify_embedding_compat_rejects_model_mismatch(

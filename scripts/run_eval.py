@@ -1,6 +1,7 @@
 """
-Runs eval/cases/*.jsonl against the running system over HTTP, exercising the
-full stack (Turn Handler, agent loop, tools).
+Runs eval/cases/*.jsonl against the running system over HTTPS (or an explicitly
+enabled local loopback HTTP endpoint), exercising the full stack (Turn Handler,
+agent loop, tools).
 
 Each case runs in its own session (fresh history) — POST /api/v1/session,
 then POST /api/v1/chat with the X-Session-Token header. The server must run
@@ -23,7 +24,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 import httpcore
 import httpx
@@ -94,7 +95,9 @@ class _PinnedNetworkBackend(httpcore.SyncBackend):
 
 class _PinnedHTTPTransport(httpx.HTTPTransport):
     def __init__(self, target: ValidatedApiTarget, allow_loopback: bool) -> None:
-        super().__init__(trust_env=False)
+        # HTTPX verifies certificates by default; disabling environment proxy
+        # configuration does not disable TLS verification.
+        super().__init__(verify=True, trust_env=False)
         self._pool._network_backend = _PinnedNetworkBackend(target, allow_loopback)
 
 
@@ -118,13 +121,7 @@ class _ApiOriginTransport(httpx.BaseTransport):
         self._transport.close()
 
 
-def validate_api_url(
-    url: str,
-    *,
-    allow_loopback: bool = False,
-    allowed_hosts: frozenset[str] | None = None,
-) -> ValidatedApiTarget:
-    """Require an allowlisted HTTPS API, except explicitly enabled loopback."""
+def _parse_api_url(url: str) -> tuple[SplitResult, str, int]:
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("API URL must use http:// or https:// and include a host")
@@ -135,20 +132,38 @@ def validate_api_url(
         raise ValueError("Cloud metadata hosts are not permitted")
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError(f"Invalid API port for host: {host}") from exc
+    return parsed, host, port
+
+
+def _resolve_api_addresses(
+    host: str, port: int
+) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
+    try:
         address_texts = dict.fromkeys(
             item[4][0]
             for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         )
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise ValueError(f"API host could not be resolved: {host}") from exc
     if not address_texts:
         raise ValueError("API host resolved to no addresses")
-    addresses = tuple(
+    return tuple(
         ipaddress.ip_address(address.split("%", 1)[0]) for address in address_texts
     )
+
+
+def _validate_api_destination(
+    parsed: SplitResult,
+    host: str,
+    addresses: tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...],
+    allow_loopback: bool,
+    allowed_hosts: frozenset[str] | None,
+) -> None:
     is_loopback_host = host == "localhost" or _is_loopback_ip(host)
     if is_loopback_host and allow_loopback and all(ip.is_loopback for ip in addresses):
-        return ValidatedApiTarget(url.rstrip("/"), host, port, addresses)
+        return
     if is_loopback_host:
         raise ValueError("Loopback API hosts require --allow-local-api")
     if any(not ip.is_global for ip in addresses):
@@ -162,6 +177,18 @@ def validate_api_url(
         raise ValueError(
             f"API host is not allowlisted; configure {TRUSTED_API_HOSTS_ENV}"
         )
+
+
+def validate_api_url(
+    url: str,
+    *,
+    allow_loopback: bool = False,
+    allowed_hosts: frozenset[str] | None = None,
+) -> ValidatedApiTarget:
+    """Require an allowlisted HTTPS API, except explicitly enabled loopback."""
+    parsed, host, port = _parse_api_url(url)
+    addresses = _resolve_api_addresses(host, port)
+    _validate_api_destination(parsed, host, addresses, allow_loopback, allowed_hosts)
     return ValidatedApiTarget(url.rstrip("/"), host, port, addresses)
 
 
@@ -256,7 +283,7 @@ def _run_cases(
 ) -> list[dict]:
     results = []
     with httpx.Client(
-        base_url="http://eval.invalid/api/v1",
+        base_url="https://eval.invalid/api/v1",
         transport=_ApiOriginTransport(target, allow_loopback),
         follow_redirects=False,
         trust_env=False,

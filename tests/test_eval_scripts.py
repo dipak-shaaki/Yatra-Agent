@@ -1,5 +1,7 @@
 """Unit tests for the eval harness logic (no LLM, no server, no index)."""
 
+import uuid
+
 import httpx
 import pytest
 
@@ -99,14 +101,17 @@ def test_eval_input_must_remain_inside_eval_tree(tmp_path) -> None:
         input_path(tmp_path)
 
 
-def test_eval_input_rejects_symlinks(tmp_path) -> None:
-    link = run_eval.PROJECT_ROOT / "eval" / "test-outside-link"
+@pytest.fixture
+def outside_eval_symlink(tmp_path):
+    link = run_eval.PROJECT_ROOT / "eval" / f"test-outside-{uuid.uuid4().hex}"
     link.symlink_to(tmp_path)
-    try:
-        with pytest.raises(ValueError, match="symlinks"):
-            input_path(link)
-    finally:
-        link.unlink()
+    yield link
+    link.unlink(missing_ok=True)
+
+
+def test_eval_input_rejects_symlinks(outside_eval_symlink) -> None:
+    with pytest.raises(ValueError, match="symlinks"):
+        input_path(outside_eval_symlink)
 
 
 def test_api_url_requires_public_http_destination(monkeypatch) -> None:
@@ -199,7 +204,7 @@ def test_api_origin_transport_routes_fixed_paths_to_validated_origin(
     capture = CaptureTransport()
     transport._transport = capture
 
-    request = httpx.Request("POST", "http://eval.invalid/api/v1/session")
+    request = httpx.Request("POST", "https://eval.invalid/api/v1/session")
     transport.handle_request(request)
 
     assert capture.request is not None

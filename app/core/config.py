@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     reasoning_effort: str | None = "low"
     final_answer_max_tokens: int = 2000
     classifier_max_tokens: int = 400
+    # Greeting/farewell replies use the router model with a short cap and a
+    # tight timeout: the templated fallback is better than a slow "hello".
+    filler_reply_max_tokens: int = 80
+    filler_reply_timeout_seconds: float = 8.0
     groq_timeout_seconds: float = 30.0
     groq_max_retries: int = 2
 

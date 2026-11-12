@@ -7,7 +7,7 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 - **Agentic tool calling** — the LLM (Groq) dynamically selects between `search_destinations`, `filter_by_criteria`, `compare_destinations`, and `calculate_budget_estimate`. Scope checking is enforced upstream by the turn classifier.
 - **Hybrid retrieval** — dense (Chroma + `bge-base-en-v1.5`) and sparse (BM25) search fused with Reciprocal Rank Fusion for the best of both.
 - **Section-aware chunking** — corpus Markdown is split on `##` headings instead of arbitrary character counts, preserving semantic boundaries.
-- **Cost-aware turn handling** — a regex fast path answers greetings/acknowledgments with 0 LLM calls; an LLM classifier catches the rest. Repeated filler triggers a loop break.
+- **Cost-aware turn handling** — a regex fast path skips classification and the agent loop for pure filler; greetings/farewells get a short reply from the small router model (templated fallback on failure), while acknowledgments stay template-only. An LLM classifier catches the rest, and repeated filler triggers a loop break.
 - **Conversation memory** — Redis stores per-session history and the filler counter.
 - **SSE streaming** — `POST /api/v1/chat` with `{"query": ..., "stream": true}` streams the answer token-by-token; sessions are minted via `POST /api/v1/session` and rate-limited per token.
 - **Evaluation harness** — 78 labeled behavioral cases across 9 categories (factual, comparison, discovery, budget, out-of-scope, adversarial, ambiguous, filler, unclear) plus 145 retrieval-routed cases, a chunk-level retrieval gate (Precision@K / Recall@K / MRR with bootstrap CIs), and an LLM answer judge scoring faithfulness, correctness, refusals, and hedging. Both the retrieval gate and the test suite run in CI.
@@ -65,7 +65,7 @@ FastAPI (app/main.py) ── JSON logs (request/session id), /metrics, /ready
   │                                              │
   │                                   ┌──────────▼───────────┐
   │                                   │ TurnGraph            │
-  │                                   │ stage 1: regex ──────┼──► filler reply, 0 LLM calls
+  │                                   │ stage 1: regex ──────┼──► greeting reply (small model, template fallback)
   │                                   │ stage 2: classifier ─┼──► new / filler / unclear / out_of_scope
   │                                   │ loop-break ──────────┼──► repeated-filler guard
   │                                   │ agent loop (≤5) ─────┘

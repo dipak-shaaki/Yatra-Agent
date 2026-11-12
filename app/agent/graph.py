@@ -18,6 +18,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 
 from app.agent.agent import AgentResult, run_agent_stream
+from app.agent.nodes.filler_reply_node import DYNAMIC_CATEGORIES, generate_filler_reply
 from app.agent.nodes.loop_breaker_node import (
     check_loop_break,
     increment_filler_count,
@@ -87,7 +88,9 @@ async def _append_turn_messages(sender: str, user_text: str, reply: str | None) 
 
 
 async def _stage1_node(turn: Turn) -> None:
-    """Regex fast path for pure filler; short-circuits or passes through."""
+    """Regex fast path for pure filler; short-circuits or passes through.
+    Greetings/farewells get an LLM-written reply (template on failure);
+    acknowledgments keep the template so "thanks" stays free."""
     category = classify_stage1(turn.query)
     if not category:
         return
@@ -95,7 +98,13 @@ async def _stage1_node(turn: Turn) -> None:
     turn.category = category
     await asyncio.to_thread(increment_filler_count, turn.sender)
     loop_break_msg = await asyncio.to_thread(check_loop_break, turn.sender)
-    turn.reply = loop_break_msg or get_templated_reply(category)
+    if loop_break_msg:
+        turn.reply = loop_break_msg
+    elif category in DYNAMIC_CATEGORIES:
+        turn.reply = await generate_filler_reply(category, turn.query)
+        turn.llm_calls += 1
+    else:
+        turn.reply = get_templated_reply(category)
     turn.short_circuited = True
     await _append_turn_messages(turn.sender, turn.query, turn.reply)
 

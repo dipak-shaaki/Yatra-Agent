@@ -29,7 +29,7 @@ Browser / CLI / eval harness
   loop breaker)
         │
         │ new_question only — unclear/out_of_scope/filler
-        │ get templated replies and never reach the agent
+        │ get fixed replies and never reach the agent
         ▼
  Agent loop (Groq function calling, streaming)
         │
@@ -82,10 +82,13 @@ injection (default = the real module-level functions, so production needs no
 configuration):
 
 1. **Stage 1 — rule fast-path** (`app/agent/nodes/stage1_rules_node.py`):
-   regex match on pure filler (greetings, acknowledgments, farewells).
-   Zero LLM calls. Patterns and reply pools live in one `FILLER_PATTERNS`
-   dict (category → patterns) compiled once at import; they are curated
-   copy that should never be duplicated elsewhere.
+   regex match on pure filler (greetings, acknowledgments, farewells), so no
+   classifier or agent loop runs. Patterns live in one `FILLER_PATTERNS` dict
+   (category → patterns) compiled once at import. Greetings/farewells get a
+   short reply written by `filler_reply_node.py` (router model, no tools,
+   80-token cap, 8s timeout); any failure falls back to the curated templates
+   in the same module. Acknowledgments keep the template so "thanks" stays
+   free, and loop-break replies take priority over both.
 2. **Stage 2 — LLM classifier** (`app/agent/nodes/stage2_classifier_node.py`,
    **async**): for anything the regex did not match, classify the turn as
    `new_question` / `filler` / `unclear` / `out_of_scope`. It passes the

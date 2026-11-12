@@ -1,9 +1,11 @@
 """
 Stage 1 — regex fast path for pure filler (greetings, acknowledgments,
-farewells). Matches skip the LLM entirely and return a templated reply.
+farewells). Matches skip classification and the agent loop entirely.
 
-The patterns and reply pools live here on purpose: this is curated copy
-that should not be duplicated anywhere else.
+Greetings/farewells get a reply written by filler_reply_node (small model,
+template fallback); acknowledgments use the curated templates below. The
+patterns and fallback copy live here on purpose: this is the one place that
+knows what "pure filler" means.
 """
 
 import re

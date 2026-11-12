@@ -460,11 +460,12 @@ app/
 ├── schemas/                     # request/response schemas
 └── utils/logger.py              # structured event logger
 data/{corpus,raw,chroma_db}/     # source docs, JSON copies, persisted index
-eval/                            # 60 cases (9 categories) + answer judge
+eval/                            # behavioral + retrieval cases, judge, baseline
 scripts/                         # build_index, eval_retrieval, run_eval, eval_answers
-tests/                           # unit + integration tests (pytest)
+tests/                           # unit + integration tests (pytest, fakeredis fallback)
 ui/                              # React + Vite chat frontend
 Dockerfile                       # API image
 docker/docker-compose.yml        # API + Redis
 docs/ARCHITECTURE.md             # this file
+docs/decisions/                  # short ADRs (Chroma, no framework, model choice)
 ```

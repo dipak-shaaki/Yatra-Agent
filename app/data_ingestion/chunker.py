@@ -45,8 +45,16 @@ def _strip_title_line(body: str) -> str:
 
 def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
     file_path = Path(file_path)
-    raw_text = file_path.read_text(encoding="utf-8")
+    return chunk_text(
+        file_path.read_text(encoding="utf-8"),
+        stem=file_path.stem,
+        source_file=file_path.name,
+    )
 
+
+def chunk_text(raw_text: str, *, stem: str, source_file: str) -> list[dict[str, Any]]:
+    """Chunk markdown from an in-memory string (no file write needed), so the
+    upsert path can validate + embed before touching the corpus file."""
     frontmatter, body = parse_frontmatter(raw_text)
     body = _strip_sources_footer(body)
     body = _strip_title_line(body)
@@ -65,12 +73,12 @@ def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
     if intro_text:
         chunks.append(
             {
-                "id": f"{file_path.stem}__overview",
+                "id": f"{stem}__overview",
                 "text": f"{dest_name} — Overview:\n{intro_text}",
                 "metadata": {
                     **metadata_base,
                     "section_title": "Overview",
-                    "source_file": file_path.name,
+                    "source_file": source_file,
                 },
             }
         )
@@ -82,9 +90,7 @@ def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
         section_text = sections[2 * i + 1].strip() if len(sections) > 2 * i + 1 else ""
         if not section_text:
             continue
-        chunk_id = (
-            f"{file_path.stem}__{header.lower().replace(' ', '_').replace('/', '_')}"
-        )
+        chunk_id = f"{stem}__{header.lower().replace(' ', '_').replace('/', '_')}"
         chunks.append(
             {
                 "id": chunk_id,
@@ -92,7 +98,7 @@ def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
                 "metadata": {
                     **metadata_base,
                     "section_title": header,
-                    "source_file": file_path.name,
+                    "source_file": source_file,
                 },
             }
         )

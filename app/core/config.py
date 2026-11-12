@@ -24,21 +24,32 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Yatra"
     environment: str = "development"
+    log_level: str = "INFO"
 
     # Groq
-    groq_api_key: str
+    # Optional at import time so unit tests / tooling work without a key;
+    # the client raises a clear error on first use instead.
+    groq_api_key: str | None = None
     # LLM judging eval answers must use a DIFFERENT model than the one
     # that generated them, or the judge inherits the generator's blind spots.
     judge_model: str = "llama-3.3-70b-versatile"
     agent_model: str = "openai/gpt-oss-20b"
+    # Small, fast model for the 4-way turn classifier; a normal question
+    # should not pay the reasoning model's latency just to be routed.
+    router_model: str = "llama-3.1-8b-instant"
     # gpt-oss reasoning tokens count against max_tokens on Groq; "low" keeps
     # the cap available for real output. None = don't send the parameter.
     reasoning_effort: str | None = "low"
     final_answer_max_tokens: int = 2000
-    classifier_max_tokens: int = 2000
+    classifier_max_tokens: int = 400
+    groq_timeout_seconds: float = 30.0
+    groq_max_retries: int = 2
 
     # Agent loop
     max_tool_iterations: int = 5
+    turn_timeout_seconds: float = 45.0
+    max_concurrent_llm_calls: int = 2
+    max_concurrent_embeddings: int = 2
 
     # Conversation memory
     conversation_history_limit: int = 12  # messages loaded into context per turn
@@ -51,6 +62,8 @@ class Settings(BaseSettings):
     # Retrieval
     candidate_pool: int = 10  # per-ranker results fetched before RRF fusion
     rrf_k: int = 60  # standard RRF constant; dampens impact of high ranks
+    search_n_results: int = 5  # default chunks returned by the search tool
+    filter_max_results: int = 10  # cap on filter_by_criteria matches
 
     # Chroma
     chroma_persist_dir: str = str(PROJECT_ROOT / "data" / "chroma_db")
@@ -71,9 +84,16 @@ class Settings(BaseSettings):
 
     # Chat API
     chat_rate_limit_per_minute: int = 30
+    session_rate_limit_per_minute: int = 10  # per-IP token minting cap
+    rate_limit_window_seconds: int = 61  # window expiry (+1s grace)
+    max_query_length: int = 2000
     # Exposes retrieved_context + tools_called in /chat responses (and the
     # final SSE event) for eval/debug; off in production.
     expose_eval_context: bool = False
+
+    # Metrics / cost estimate (USD per million tokens; edit to your model)
+    input_cost_per_million: float = 0.075
+    output_cost_per_million: float = 0.30
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

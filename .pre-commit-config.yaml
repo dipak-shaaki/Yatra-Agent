@@ -1,0 +1,17 @@
+# Fast local checks; CI repeats them plus pytest and the retrieval gate.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        # mypy is configured in pyproject.toml (files = ["app"]).
+        pass_filenames: false
+        additional_dependencies:
+          - pydantic>=2.13.5
+          - pydantic-settings>=2.15.0

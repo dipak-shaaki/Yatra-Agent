@@ -21,14 +21,23 @@ function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
 
-  // Mint a session token once per page load; the server derives the chat
-  // identity from it, so there is no client-chosen sender anymore.
+  // Reuse the stored session token so a page refresh keeps the
+  // server-side conversation history; mint one only on first visit.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/v1/session', { method: 'POST' })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data: { session_token: string }) => {
-        if (!cancelled) setSessionToken(data.session_token)
+    const stored = localStorage.getItem('yatra_session_token')
+    const mint = () =>
+      fetch('/api/v1/session', { method: 'POST' })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+        .then((data: { session_token: string }) => {
+          localStorage.setItem('yatra_session_token', data.session_token)
+          return data.session_token
+        })
+
+    const tokenPromise: Promise<string> = stored ? Promise.resolve(stored) : mint()
+    tokenPromise
+      .then((token) => {
+        if (!cancelled) setSessionToken(token)
       })
       .catch(() => {
         /* chat calls will surface the error */
@@ -67,6 +76,7 @@ function App() {
         body: JSON.stringify({ query, stream: true }),
       })
       if (!res.ok || !res.body) {
+        if (res.status === 401) localStorage.removeItem('yatra_session_token')
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || `HTTP ${res.status}`)
       }
@@ -85,19 +95,20 @@ function App() {
         buffer = events.pop() ?? ''
 
         for (const raw of events) {
-          const line = raw.split('\n').find((l) => l.startsWith('data: '))
-          if (!line) continue
-          const payload = line.slice(6)
-          if (payload === '[DONE]') {
-            done = true
-            break
-          }
+          const dataLine = raw.split('\n').find((l) => l.startsWith('data: '))
+          if (!dataLine) continue
           try {
-            const { chunk } = JSON.parse(payload)
-            if (chunk) {
-              append(chunk)
+            const event = JSON.parse(dataLine.slice(6))
+            if (event.type === 'token' && event.content) {
+              append(event.content)
               await nextFrame()
+            } else if (event.type === 'error') {
+              append(`\n\nError: ${event.message}`)
+            } else if (event.type === 'done') {
+              done = true
+              break
             }
+            // meta events are for eval/debug and ignored by the UI.
           } catch {
             /* ignore malformed events */
           }

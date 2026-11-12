@@ -5,8 +5,8 @@ No LLM calls, no server needed — this isolates retrieval quality.
 
 Also doubles as an ablation harness (--retriever dense|bm25 shows what the
 other half of hybrid buys) and as a CI gate: --gate-* thresholds exit
-nonzero when missed. Run as `python scripts/eval_retrieval.py` — the
-sys.path bootstrap makes `app` importable without PYTHONPATH.
+nonzero when missed. Run as `python -m scripts.eval_retrieval` from the
+project root, so `app` imports resolve without sys.path hacks.
 """
 
 import argparse
@@ -16,7 +16,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.hybrid_retriever import hybrid_search

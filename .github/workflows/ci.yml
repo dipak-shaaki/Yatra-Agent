@@ -92,7 +92,7 @@ jobs:
           key: hf-bge-base-en-v1.5
 
       - name: Build Chroma index
-        run: uv run --no-build --locked python scripts/build_index.py
+        run: uv run --no-build --locked python -m scripts.build_index
 
       - name: Retrieval quality gate
-        run: uv run --no-build --locked python scripts/eval_retrieval.py --retriever hybrid
+        run: uv run --no-build --locked python -m scripts.eval_retrieval --retriever hybrid

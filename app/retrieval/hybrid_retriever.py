@@ -11,7 +11,7 @@ from app.utils.logger import log_event
 
 
 def hybrid_search(
-    query: str, n_results: int = 5, candidate_pool: int | None = None
+    query: str, n_results: int | None = None, candidate_pool: int | None = None
 ) -> list[dict]:
     """
     Returns the top n_results fused chunks as:
@@ -19,6 +19,8 @@ def hybrid_search(
     candidate_pool controls how many results each individual method retrieves
     before fusion — should be >= n_results to give RRF enough to work with.
     """
+    if n_results is None:
+        n_results = get_settings().search_n_results
     if candidate_pool is None:
         candidate_pool = get_settings().candidate_pool
 

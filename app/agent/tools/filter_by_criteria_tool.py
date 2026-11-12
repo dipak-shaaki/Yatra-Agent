@@ -9,6 +9,7 @@ corpus's 1-5 scale is coarse), and tags come from the same controlled
 vocabulary the tool schema advertises, so "trek" matches ["lake", "trek"].
 """
 
+from app.core.config import get_settings
 from app.data_ingestion.corpus_meta import Destination, get_destinations
 
 
@@ -31,7 +32,7 @@ def filter_by_criteria(
     province: str | None = None,
     difficulty_level: int | None = None,
     type: str | None = None,
-    max_results: int = 10,
+    max_results: int | None = None,
 ) -> list[dict]:
     """Return destinations matching the given filters, one card per
     destination.
@@ -40,6 +41,7 @@ def filter_by_criteria(
     """
     if not any([province, difficulty_level is not None, type]):
         return []
+    max_results = max_results or get_settings().filter_max_results
 
     province_l = province.strip().lower() if province else None
     # Tolerate plurals the model may send despite the enum ("treks" -> "trek").

@@ -1,14 +1,9 @@
 """
 Chunk the corpus, embed every chunk, and upsert into Chroma.
 
-Run as `python scripts/build_index.py` from anywhere — the sys.path bootstrap
-puts the project root on the path so `app` imports work without PYTHONPATH.
+Run as `python -m scripts.build_index` from the project root so `app`
+imports resolve without sys.path hacks.
 """
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import get_settings
 from app.data_ingestion.chunker import chunk_corpus_dir

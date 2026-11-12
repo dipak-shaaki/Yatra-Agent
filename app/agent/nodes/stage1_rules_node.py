@@ -11,8 +11,6 @@ import secrets
 
 from app.data_ingestion.corpus_meta import get_destinations
 
-_destination_count = len(get_destinations())
-
 # One dict instead of parallel pattern/category lists: the category can
 # never drift out of sync with the pattern it belongs to.
 FILLER_PATTERNS: dict[str, list[str]] = {
@@ -39,9 +37,9 @@ COMPILED_PATTERNS = [
 
 TEMPLATED_REPLIES = {
     "greeting": [
-        f"Hi! I can help you plan trips to {_destination_count} amazing Nepal destinations — treks, heritage towns, and pilgrimage sites. What would you like to know?",
+        "Hi! I can help you plan trips to {count} amazing Nepal destinations — treks, heritage towns, and pilgrimage sites. What would you like to know?",
         "Hello! Ready to explore Nepal? Ask me about treks, permits, budgets, or best time to visit.",
-        f"Hey there! I cover {_destination_count} great Nepal destinations. What are you curious about?",
+        "Hey there! I cover {count} great Nepal destinations. What are you curious about?",
     ],
     "acknowledgment": [
         "You're welcome! Let me know if you have more questions about Nepal travel.",
@@ -70,5 +68,7 @@ def classify_stage1(message: str) -> str | None:
 
 def get_templated_reply(category: str) -> str:
     """Pick a random variant from the category's reply pool so repeated
-    filler messages do not all receive the identical reply."""
-    return secrets.choice(TEMPLATED_REPLIES.get(category, ["Okay!"]))
+    filler messages do not all receive the identical reply. The destination
+    count is filled at call time, so an upsert is visible without a restart."""
+    template = secrets.choice(TEMPLATED_REPLIES.get(category, ["Okay!"]))
+    return template.format(count=len(get_destinations()))

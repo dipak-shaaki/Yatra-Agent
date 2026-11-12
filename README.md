@@ -63,7 +63,7 @@ With uv on the host (Redis still via Docker):
 uv sync
 cp app/core/.env.example app/core/.env   # set GROQ_API_KEY
 docker compose -f docker/docker-compose.yml up -d redis
-uv run python scripts/build_index.py
+uv run python -m scripts.build_index
 uv run uvicorn app.main:app --reload
 ```
 

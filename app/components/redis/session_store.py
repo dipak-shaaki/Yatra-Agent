@@ -27,8 +27,21 @@ def _token_key(token: str) -> str:
     return f"session_token:{token}"
 
 
-def _rate_key(sender: str, window: int) -> str:
-    return f"rate:{sender}:{window}"
+def _rate_key(scope: str, window: int) -> str:
+    return f"rate:{scope}:{window}"
+
+
+def _fixed_window(scope: str, limit_per_minute: int) -> tuple[bool, int]:
+    """Fixed-window limiter; returns (allowed, retry_after_seconds)."""
+    settings = get_settings()
+    client = get_redis_client()
+    window = int(time.time() // 60)
+    key = _rate_key(scope, window)
+    count = client.incr(key)
+    if count == 1:
+        client.expire(key, settings.rate_limit_window_seconds)
+    retry_after = 60 - int(time.time() % 60)
+    return count <= limit_per_minute, retry_after
 
 
 def create_session_token() -> str:
@@ -50,15 +63,16 @@ def validate_session_token(token: str) -> bool:
 
 
 def check_rate_limit(sender: str, limit_per_minute: int) -> tuple[bool, int]:
-    """Fixed-window limiter; returns (allowed, retry_after_seconds)."""
-    client = get_redis_client()
-    window = int(time.time() // 60)
-    key = _rate_key(sender, window)
-    count = client.incr(key)
-    if count == 1:
-        client.expire(key, 61)  # outlives the window so the next one starts clean
-    retry_after = 60 - int(time.time() % 60)
-    return count <= limit_per_minute, retry_after
+    """Per-token /chat limiter; returns (allowed, retry_after_seconds)."""
+    return _fixed_window(f"chat:{sender}", limit_per_minute)
+
+
+def check_session_mint_limit(client_ip: str) -> tuple[bool, int]:
+    """Per-IP /session limiter: one caller cannot mint endless tokens and
+    sidestep the per-token /chat limit."""
+    return _fixed_window(
+        f"session:{client_ip}", get_settings().session_rate_limit_per_minute
+    )
 
 
 def append_message(sender: str, role: str, content: str) -> None:

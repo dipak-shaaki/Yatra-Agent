@@ -5,7 +5,7 @@ end-user chat flow.
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.routers.dependencies import require_admin
 from app.schemas.document_schema import DocumentUpsertRequest
@@ -22,4 +22,4 @@ async def upsert_document_endpoint(request: DocumentUpsertRequest):
         )
     except ValueError as e:
         # Schema-invalid documents are a client error, not a server error.
-        return {"error": str(e)}
+        raise HTTPException(status_code=422, detail=str(e))

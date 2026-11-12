@@ -3,14 +3,17 @@ Wraps hybrid_search() for single-destination or single-topic factual
 questions; the tool the agent calls most often.
 """
 
+from app.core.config import get_settings
 from app.retrieval.hybrid_retriever import hybrid_search
 
 
-def search_destinations(query: str, n_results: int = 5) -> list[dict]:
+def search_destinations(query: str, n_results: int | None = None) -> list[dict]:
     """Return retrieved chunks as [{"destination", "section", "text"}] for
     the LLM's context — internal scores and ids are dropped on purpose.
     source_file and last_updated ride along so answers can cite sources."""
-    results = hybrid_search(query, n_results=n_results)
+    results = hybrid_search(
+        query, n_results=n_results or get_settings().search_n_results
+    )
     return [
         {
             "destination": r["metadata"].get(

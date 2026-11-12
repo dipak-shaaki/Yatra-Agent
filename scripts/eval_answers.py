@@ -3,12 +3,13 @@ Judges eval/results.jsonl (written by scripts/run_eval.py) with the combined
 answer judge, computes tool-selection accuracy and latency percentiles, and
 writes eval/judged.jsonl.
 
+Run as `python -m scripts.eval_answers` from the project root.
+
 A case passes when every verdict required for its category is true:
 faithful+correct for answer categories, correct alone for filler/unclear,
 plus refusal_correct for cases flagged requires_refusal and hedged for
-cases flagged hedge. Tool selection is any-of: at least one expected tool
-must have been called (and for cases that expect no tools, none may be
-called).
+cases flagged hedge. Tool selection is exact: the set of expected tools must
+equal the set of tools actually called (wrong extras fail).
 """
 
 import argparse
@@ -19,7 +20,6 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from eval.answer_judge import judge_answer
 

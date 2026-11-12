@@ -62,6 +62,7 @@ class Turn:
     llm_calls: int = 0
     stage: str | None = None
     short_circuited: bool = False
+    failed: bool = False
 
 
 def _get_last_assistant_message(sender: str) -> str:
@@ -74,9 +75,12 @@ def _get_last_assistant_message(sender: str) -> str:
     return ""
 
 
-async def _append_turn_messages(sender: str, user_text: str, reply: str) -> None:
+async def _append_turn_messages(sender: str, user_text: str, reply: str | None) -> None:
+    """Persist the user turn always; the assistant reply only when the turn
+    actually produced one (error/timeout replies must not enter history)."""
     await asyncio.to_thread(append_message, sender, "user", user_text)
-    await asyncio.to_thread(append_message, sender, "assistant", reply)
+    if reply is not None:
+        await asyncio.to_thread(append_message, sender, "assistant", reply)
 
 
 # --- default nodes (module-level so the class can reference them) ---------
@@ -135,7 +139,10 @@ async def _agent_stream_node(turn: Turn) -> AsyncGenerator[str]:
     turn.retrieved_context = result.retrieved_context
     turn.tools_called = result.tools_called
     turn.llm_calls += result.llm_calls
-    await _append_turn_messages(turn.sender, turn.query, turn.reply)
+    turn.failed = result.failed
+    await _append_turn_messages(
+        turn.sender, turn.query, None if result.failed else turn.reply
+    )
 
 
 async def _last_assistant_message_node(sender: str) -> str:

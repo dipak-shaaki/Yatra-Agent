@@ -8,7 +8,9 @@ so we rebuild in memory rather than persisting to disk.
 Multi-worker safe: the index is cached against (corpus_dir, corpus_version),
 where the version lives in Redis and is bumped by every document upsert. A
 worker that sees a new version rebuilds automatically — no more silently
-stale index in the processes that did not handle the upsert.
+stale index in the processes that did not handle the upsert. The chunks come
+from `corpus_meta.get_corpus_chunks()`, so BM25 and the tools read the same
+versioned snapshot of the markdown corpus.
 """
 
 import re
@@ -16,9 +18,12 @@ import threading
 
 from rank_bm25 import BM25Okapi
 
-from app.components.redis.client import get_redis_client
 from app.core.config import get_settings
-from app.data_ingestion.chunker import chunk_corpus_dir
+from app.data_ingestion.corpus_meta import get_corpus_chunks
+from app.data_ingestion.corpus_version import (  # noqa: F401 — re-exported
+    bump_corpus_version,
+    current_corpus_version,
+)
 from app.utils.logger import log_event
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -38,36 +43,23 @@ class BM25Index:
     def __init__(self, chunks: list[dict]):
         self.chunks = chunks
         self.ids = [c["id"] for c in chunks]
-        tokenized_corpus = [_tokenize(c["text"]) for c in chunks]
-        self.bm25 = BM25Okapi(tokenized_corpus)
+        # BM25Okapi divides by the corpus size (avgdl), so an empty corpus
+        # raises ZeroDivisionError. Keep an empty index searchable instead.
+        self.bm25 = (
+            BM25Okapi([_tokenize(c["text"]) for c in chunks]) if chunks else None
+        )
 
-    def search(self, query: str, n_results: int = 5) -> list[tuple[str, float]]:
+    def search(
+        self, query: str, n_results: int | None = None
+    ) -> list[tuple[str, float]]:
         """Returns [(chunk_id, score), ...] sorted by score descending."""
+        if self.bm25 is None:
+            return []
+        n_results = n_results or get_settings().search_n_results
         tokenized_query = _tokenize(query)
         scores = self.bm25.get_scores(tokenized_query)
         ranked = sorted(zip(self.ids, scores), key=lambda x: x[1], reverse=True)
         return ranked[:n_results]
-
-
-def bump_corpus_version() -> None:
-    """Signal every worker that the corpus changed (called on upsert)."""
-    try:
-        get_redis_client().incr(CORPUS_VERSION_KEY)
-    except Exception as e:
-        # shortcut: same-host workers share the corpus dir but keep their
-        # in-memory index until restart when Redis is down; upgrade to a
-        # filesystem mtime check if that ever matters.
-        log_event("corpus_version_bump_failed", error=str(e))
-
-
-def _current_corpus_version() -> str:
-    try:
-        version = get_redis_client().get(CORPUS_VERSION_KEY)
-        if isinstance(version, str):
-            return version
-        return "0"
-    except Exception:
-        return "0"  # Redis unavailable — serve the cached index, don't thrash
 
 
 _cache_lock = threading.Lock()
@@ -78,11 +70,11 @@ def get_bm25_index() -> BM25Index:
     """Cached singleton, rebuilt when the corpus dir or shared version changes."""
     global _cached
     corpus_dir = get_settings().corpus_dir
-    version = _current_corpus_version()
+    version = current_corpus_version()
     with _cache_lock:
         if _cached is not None and _cached[:2] == (corpus_dir, version):
             return _cached[2]
-        index = BM25Index(chunk_corpus_dir(corpus_dir))
+        index = BM25Index(list(get_corpus_chunks()))
         _cached = (corpus_dir, version, index)
         log_event("bm25_index_built", corpus_dir=corpus_dir, version=version)
         return index

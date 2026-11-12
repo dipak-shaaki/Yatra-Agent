@@ -23,4 +23,4 @@ EXPOSE 8000
 
 # Rebuild the Chroma index from the baked-in corpus (idempotent — the
 # embedding model and chroma db live in named volumes), then serve.
-CMD ["sh", "-c", "python scripts/build_index.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m scripts.build_index && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

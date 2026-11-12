@@ -39,9 +39,10 @@ def test_embed_failure_writes_nothing(corpus, monkeypatch) -> None:
     monkeypatch.setattr(
         doc_service, "upsert_chunks", lambda **kw: calls.append("upsert")
     )
+    content = _valid_doc()
 
     with pytest.raises(RuntimeError, match="model down"):
-        doc_service.upsert_document("test_peak", _valid_doc())
+        doc_service.upsert_document("test_peak", content)
 
     assert not (corpus / "test_peak.md").exists()
     assert calls == ["embed"]  # no index write

@@ -93,6 +93,46 @@ async def _consume_provider_stream(
             _append_tool_deltas(state.tool_calls, delta.tool_calls)
 
 
+def _provider_failure(state: _ProviderRound, run: AgentResult) -> str:
+    run.failed = True
+    if state.content.strip():
+        run.answer = state.content + AGENT_ERROR_SUFFIX
+        return AGENT_ERROR_SUFFIX
+    run.answer = AGENT_ERROR_REPLY
+    return AGENT_ERROR_REPLY
+
+
+def _finish_if_answer(
+    state: _ProviderRound, run: AgentResult, iteration: int, turn_start: float
+) -> bool:
+    if state.tool_calls:
+        return False
+    total_s = f"{time.perf_counter() - turn_start:.2f}"
+    if not state.content.strip():
+        log_event("agent_empty_content", iterations=iteration, total_time_secs=total_s)
+        run.failed = True
+        run.answer = AGENT_ERROR_REPLY
+        return True
+    log_event("agent_final_answer", iterations=iteration, total_time_secs=total_s)
+    run.answer = state.content
+    return True
+
+
+def _assistant_tool_message(state: _ProviderRound) -> dict:
+    return {
+        "role": "assistant",
+        "content": state.content or None,
+        "tool_calls": [
+            {
+                "id": call["id"],
+                "type": "function",
+                "function": {"name": call["name"], "arguments": call["arguments"]},
+            }
+            for call in state.tool_calls.values()
+        ],
+    }
+
+
 def _system_prompt() -> str:
     names = destination_names()
     _destinations = ", ".join(names)
@@ -225,13 +265,7 @@ async def run_agent_stream(
                 error=type(e).__name__,
                 detail=str(e)[:300],
             )
-            run.failed = True
-            if provider_round.content.strip():
-                run.answer = provider_round.content + AGENT_ERROR_SUFFIX
-                yield AGENT_ERROR_SUFFIX
-            else:
-                run.answer = AGENT_ERROR_REPLY
-                yield AGENT_ERROR_REPLY
+            yield _provider_failure(provider_round, run)
             return
 
         llm_elapsed_s = f"{time.perf_counter() - llm_start:.2f}"
@@ -256,44 +290,12 @@ async def run_agent_stream(
                 getattr(provider_round.usage, "completion_tokens", 0),
             )
 
-        if not provider_round.tool_calls:
-            total_s = f"{time.perf_counter() - turn_start:.2f}"
+        if _finish_if_answer(provider_round, run, iteration + 1, turn_start):
             if not provider_round.content.strip():
-                # The model stopped without content — typically reasoning
-                # tokens ate the budget. Fail loudly instead of streaming
-                # an empty answer.
-                log_event(
-                    "agent_empty_content",
-                    iterations=iteration + 1,
-                    total_time_secs=total_s,
-                )
-                run.failed = True
-                run.answer = AGENT_ERROR_REPLY
                 yield AGENT_ERROR_REPLY
-                return
-            log_event(
-                "agent_final_answer", iterations=iteration + 1, total_time_secs=total_s
-            )
-            run.answer = provider_round.content
             return
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": provider_round.content or None,
-                "tool_calls": [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": tc["arguments"],
-                        },
-                    }
-                    for tc in provider_round.tool_calls.values()
-                ],
-            }
-        )
+        messages.append(_assistant_tool_message(provider_round))
 
         # Independent tool calls in one round run concurrently.
         tool_messages = await asyncio.gather(

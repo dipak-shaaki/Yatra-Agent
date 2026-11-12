@@ -51,28 +51,33 @@ def test_valid_frontmatter_parses() -> None:
 
 
 def test_unknown_province_rejected() -> None:
+    document = _doc(province="Pokhara")
     with pytest.raises(ValueError, match="province"):
-        parse_frontmatter(_doc(province="Pokhara"))
+        parse_frontmatter(document)
 
 
 def test_unknown_tag_rejected() -> None:
+    document = _doc(tags=["beach"])
     with pytest.raises(ValueError, match="tag"):
-        parse_frontmatter(_doc(tags=["beach"]))
+        parse_frontmatter(document)
 
 
 def test_unknown_field_rejected() -> None:
+    document = _doc(extra_frontmatter="surprise: 1")
     with pytest.raises(ValueError, match="Extra inputs"):
-        parse_frontmatter(_doc(extra_frontmatter="surprise: 1"))
+        parse_frontmatter(document)
 
 
 def test_inverted_day_range_rejected() -> None:
+    document = _doc(days_min=5, days_max=2)
     with pytest.raises(ValueError, match="days_min"):
-        parse_frontmatter(_doc(days_min=5, days_max=2))
+        parse_frontmatter(document)
 
 
 def test_difficulty_out_of_range_rejected() -> None:
+    document = _doc(difficulty=9)
     with pytest.raises(ValueError, match="difficulty"):
-        parse_frontmatter(_doc(difficulty=9))
+        parse_frontmatter(document)
 
 
 def test_vocabularies_nonempty() -> None:

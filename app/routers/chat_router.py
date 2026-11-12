@@ -115,7 +115,6 @@ def _enforce_rate_limit(sender: str) -> None:
 
 @router.post(
     "/session",
-    response_model=SessionResponse,
     responses={
         429: {
             "model": ErrorResponse,
@@ -144,7 +143,6 @@ async def create_session(request: Request) -> SessionResponse:
 
 @router.post(
     "/debug/search",
-    response_model=DebugSearchResponse,
     dependencies=[Depends(require_admin)],
     responses={403: {"model": ErrorResponse, "description": "Admin token is invalid"}},
 )

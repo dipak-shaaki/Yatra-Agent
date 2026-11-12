@@ -80,6 +80,15 @@ class _PinnedHTTPTransport(httpx.HTTPTransport):
         self._pool._network_backend = _PinnedNetworkBackend(allow_private)
 
 
+def _public_addresses(host: str, addresses: set[str]) -> None:
+    if host.lower().rstrip(".") in {"localhost", "metadata.google.internal"}:
+        raise ValueError("API host is not permitted")
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+        if not ip.is_global:
+            raise ValueError(f"API host resolves to a non-public address: {ip}")
+
+
 def validate_api_url(url: str, *, allow_private: bool = False) -> str:
     """Require HTTP(S) and reject DNS answers that are not public by default."""
     parsed = urlsplit(url)
@@ -100,15 +109,7 @@ def validate_api_url(url: str, *, allow_private: bool = False) -> str:
     if not addresses:
         raise ValueError("API host resolved to no addresses")
     if not allow_private:
-        if parsed.hostname.lower().rstrip(".") in {
-            "localhost",
-            "metadata.google.internal",
-        }:
-            raise ValueError("API host is not permitted")
-        for address in addresses:
-            ip = ipaddress.ip_address(address.split("%", 1)[0])
-            if not ip.is_global:
-                raise ValueError(f"API host resolves to a non-public address: {ip}")
+        _public_addresses(parsed.hostname, addresses)
     return url.rstrip("/")
 
 
@@ -124,9 +125,17 @@ def load_cases(eval_dir: Path) -> list[dict]:
     return cases
 
 
-def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) -> dict:
+def run_case(
+    case: dict,
+    client: httpx.Client,
+    base_url: str,
+    timeout: float,
+    *,
+    allow_private_api: bool = False,
+) -> dict:
     start = time.perf_counter()
     try:
+        base_url = validate_api_url(base_url, allow_private=allow_private_api)
         session_response = client.post(f"{base_url}/session", timeout=timeout)
         if 300 <= session_response.status_code < 400:
             raise ValueError("API redirects are not followed")
@@ -172,6 +181,46 @@ def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) ->
         "error": error,
         "time_secs": elapsed_s,
     }
+
+
+def _print_case_result(result: dict) -> None:
+    if result["error"]:
+        print(f"  ERROR: {result['error']}")
+        return
+    print(f"  time={result['time_secs']}s tools={result['tools_called']}")
+    print(f"  expected: {(result['expected_answer'] or '')[:100]}")
+    print(f"  actual:   {(result['actual_answer'] or '')[:100]}")
+
+
+def _run_cases(
+    cases: list[dict],
+    api_url: str,
+    delay: float,
+    timeout: float,
+    allow_private_api: bool,
+) -> list[dict]:
+    results = []
+    with httpx.Client(
+        transport=_PinnedHTTPTransport(allow_private_api),
+        follow_redirects=False,
+        trust_env=False,
+        timeout=timeout,
+    ) as client:
+        for index, case in enumerate(cases):
+            print(f"[{case['id']}] ({case.get('category')}) {case['question']}")
+            result = run_case(
+                case,
+                client,
+                api_url,
+                timeout,
+                allow_private_api=allow_private_api,
+            )
+            results.append(result)
+            _print_case_result(result)
+            print()
+            if index < len(cases) - 1 and delay > 0:
+                time.sleep(delay)
+    return results
 
 
 def main() -> int:
@@ -231,31 +280,13 @@ def main() -> int:
 
     print(f"Running {len(cases)} eval cases against {api_url}...\n")
 
-    results = []
-    with httpx.Client(
-        transport=_PinnedHTTPTransport(args.allow_private_api),
-        follow_redirects=False,
-        trust_env=False,
-        timeout=args.timeout,
-    ) as client:
-        for index, case in enumerate(cases):
-            print(f"[{case['id']}] ({case.get('category')}) {case['question']}")
-
-            result = run_case(case, client, api_url, args.timeout)
-            results.append(result)
-
-            if result["error"]:
-                print(f"  ERROR: {result['error']}")
-            else:
-                print(f"  time={result['time_secs']}s tools={result['tools_called']}")
-                print(f"  expected: {(result['expected_answer'] or '')[:100]}")
-                print(f"  actual:   {(result['actual_answer'] or '')[:100]}")
-
-            print()
-
-            # Wait between cases to reduce API/rate-limit pressure.
-            if index < len(cases) - 1 and args.delay > 0:
-                time.sleep(args.delay)
+    results = _run_cases(
+        cases,
+        api_url,
+        args.delay,
+        args.timeout,
+        args.allow_private_api,
+    )
 
     results_path.parent.mkdir(parents=True, exist_ok=True)
     with results_path.open("w", encoding="utf-8") as f:

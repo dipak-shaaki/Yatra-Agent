@@ -9,7 +9,7 @@ from typing import Any
 
 from app.data_ingestion.frontmatter import parse_frontmatter
 
-SECTION_SPLIT_RE = re.compile(r"^##[ \t]+([^\n]+?)[ \t]*$", re.MULTILINE)
+SECTION_SPLIT_RE = re.compile(r"^##[ \t]+([^\n]+)[ \t]*$", re.MULTILINE)
 
 
 def _flatten_metadata(
@@ -42,7 +42,7 @@ def _strip_sources_footer(body: str) -> str:
 
 def _strip_title_line(body: str) -> str:
     """Drop the leading '# Title' line — it's document-level, not a section."""
-    return re.sub(r"^#\s+.+?\n", "", body, count=1).strip()
+    return re.sub(r"^#[ \t]+[^\n]+\n", "", body, count=1).strip()
 
 
 def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
@@ -85,7 +85,7 @@ def chunk_text(raw_text: str, *, stem: str, source_file: str) -> list[dict[str, 
             }
         )
 
-    headers = SECTION_SPLIT_RE.findall(body)
+    headers = [header.strip() for header in SECTION_SPLIT_RE.findall(body)]
     sections = SECTION_SPLIT_RE.split(body)[1:]
 
     for i, header in enumerate(headers):

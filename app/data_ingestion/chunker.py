@@ -9,7 +9,7 @@ from typing import Any
 
 from app.data_ingestion.frontmatter import parse_frontmatter
 
-SECTION_SPLIT_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+SECTION_SPLIT_RE = re.compile(r"^##[ \t]+([^\n]+?)[ \t]*$", re.MULTILINE)
 
 
 def _flatten_metadata(
@@ -35,7 +35,9 @@ def _flatten_metadata(
 
 def _strip_sources_footer(body: str) -> str:
     """Drop a trailing '---\\n*Sources: ...*' footer if present."""
-    return re.split(r"\n---\s*\n\*Sources:.*", body, flags=re.DOTALL)[0].strip()
+    return re.split(r"\n---[ \t]*\n\*Sources:[^\n]*(?:\n|$)", body, maxsplit=1)[
+        0
+    ].strip()
 
 
 def _strip_title_line(body: str) -> str:

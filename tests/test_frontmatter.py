@@ -76,4 +76,5 @@ def test_difficulty_out_of_range_rejected() -> None:
 
 
 def test_vocabularies_nonempty() -> None:
-    assert PROVINCES and ALLOWED_TAGS
+    assert PROVINCES
+    assert ALLOWED_TAGS

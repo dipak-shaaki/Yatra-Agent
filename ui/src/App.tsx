@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './index.css'
 
-type Message = { role: 'user' | 'assistant'; content: string }
+type Message = { id: string; role: 'user' | 'assistant'; content: string }
+type StreamEvent = { type?: string; content?: string; message?: string }
 
 const SUGGESTIONS = [
   "What's the best time to visit Annapurna Base Camp?",
@@ -51,8 +52,9 @@ function App() {
     const query = input.trim()
     if (!query || busy) return
     setInput('')
-    setMessages((m) => [...m, { role: 'user', content: query }])
-    setMessages((m) => [...m, { role: 'assistant', content: '' }])
+    const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: query }
+    const assistantMessage: Message = { id: crypto.randomUUID(), role: 'assistant', content: '' }
+    setMessages((m) => [...m, userMessage, assistantMessage])
     setBusy(true)
 
     const msgIndex = messages.length + 1
@@ -60,7 +62,7 @@ function App() {
     const append = (delta: string) =>
       setMessages((m) => {
         const next = [...m]
-        next[msgIndex] = { role: 'assistant', content: next[msgIndex].content + delta }
+        next[msgIndex] = { ...next[msgIndex], content: next[msgIndex].content + delta }
         return next
       })
 
@@ -81,39 +83,7 @@ function App() {
         throw new Error(data.detail || `HTTP ${res.status}`)
       }
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let done = false
-
-      while (!done) {
-        const { done: readDone, value } = await reader.read()
-        buffer += decoder.decode(value ?? new Uint8Array(), { stream: true })
-        done = readDone
-
-        const events = buffer.split('\n\n')
-        buffer = events.pop() ?? ''
-
-        for (const raw of events) {
-          const dataLine = raw.split('\n').find((l) => l.startsWith('data: '))
-          if (!dataLine) continue
-          try {
-            const event = JSON.parse(dataLine.slice(6))
-            if (event.type === 'token' && event.content) {
-              append(event.content)
-              await nextFrame()
-            } else if (event.type === 'error') {
-              append(`\n\nError: ${event.message}`)
-            } else if (event.type === 'done') {
-              done = true
-              break
-            }
-            // meta events are for eval/debug and ignored by the UI.
-          } catch {
-            /* ignore malformed events */
-          }
-        }
-      }
+      await readStream(res.body.getReader(), append, nextFrame)
     } catch (err) {
       append(`Error: ${(err as Error).message}`)
     } finally {
@@ -150,24 +120,10 @@ function App() {
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`row ${m.role}`}>
+        {messages.map((m) => (
+          <div key={m.id} className={`row ${m.role}`}>
             <div className={`bubble${m.role === 'assistant' ? ' ai' : ''}`}>
-              {m.role === 'assistant' ? (
-                m.content ? (
-                  <ReactMarkdown>{m.content}</ReactMarkdown>
-                ) : busy ? (
-                  <div className="typing">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                ) : (
-                  ''
-                )
-              ) : (
-                m.content
-              )}
+              {renderMessageContent(m, busy)}
             </div>
           </div>
         ))}
@@ -186,6 +142,66 @@ function App() {
           Send
         </button>
       </footer>
+    </div>
+  )
+}
+
+async function readStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  append: (delta: string) => void,
+  nextFrame: () => Promise<void>,
+) {
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let done = false
+  while (!done) {
+    const result = await reader.read()
+    buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: true })
+    done = result.done
+    const events = buffer.split('\n\n')
+    buffer = events.pop() ?? ''
+    for (const raw of events) {
+      const shouldStop = await handleStreamEvent(raw, append, nextFrame)
+      if (shouldStop) {
+        done = true
+        break
+      }
+    }
+  }
+}
+
+async function handleStreamEvent(
+  raw: string,
+  append: (delta: string) => void,
+  nextFrame: () => Promise<void>,
+): Promise<boolean> {
+  const dataLine = raw.split('\n').find((line) => line.startsWith('data: '))
+  if (!dataLine) return false
+  try {
+    const event = JSON.parse(dataLine.slice(6)) as StreamEvent
+    if (event.type === 'token' && event.content) {
+      append(event.content)
+      await nextFrame()
+    } else if (event.type === 'error') {
+      append(`\n\nError: ${event.message}`)
+    } else if (event.type === 'done') {
+      return true
+    }
+  } catch {
+    // Ignore malformed events, matching the existing streaming behavior.
+  }
+  return false
+}
+
+function renderMessageContent(message: Message, busy: boolean) {
+  if (message.role !== 'assistant') return message.content
+  if (message.content) return <ReactMarkdown>{message.content}</ReactMarkdown>
+  if (!busy) return ''
+  return (
+    <div className="typing">
+      <span />
+      <span />
+      <span />
     </div>
   )
 }

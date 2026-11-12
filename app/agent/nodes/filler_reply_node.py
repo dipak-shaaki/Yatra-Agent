@@ -72,7 +72,6 @@ async def generate_filler_reply(category: str, message: str) -> str:
         usage = getattr(response, "usage", None)
         if usage:
             record_llm_usage(
-                settings.router_model,
                 getattr(usage, "prompt_tokens", 0),
                 getattr(usage, "completion_tokens", 0),
             )

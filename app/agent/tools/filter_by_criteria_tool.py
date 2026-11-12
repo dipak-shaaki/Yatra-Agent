@@ -28,6 +28,21 @@ def _destination_card(dest: Destination) -> dict:
     }
 
 
+def _matches(
+    dest: Destination,
+    province: str | None,
+    difficulty_level: int | None,
+    destination_type: str | None,
+) -> bool:
+    if province and dest.province.lower() != province:
+        return False
+    if difficulty_level is not None and abs(dest.difficulty - difficulty_level) > 1:
+        return False
+    return not destination_type or destination_type in {
+        tag.lower() for tag in dest.tags
+    }
+
+
 def filter_by_criteria(
     province: str | None = None,
     difficulty_level: int | None = None,
@@ -49,11 +64,7 @@ def filter_by_criteria(
 
     matches: list[dict] = []
     for dest in get_destinations():
-        if province_l and dest.province.lower() != province_l:
-            continue
-        if difficulty_level is not None and abs(dest.difficulty - difficulty_level) > 1:
-            continue
-        if type_l and type_l not in {tag.lower() for tag in dest.tags}:
+        if not _matches(dest, province_l, difficulty_level, type_l):
             continue
         matches.append(_destination_card(dest))
         if len(matches) >= max_results:

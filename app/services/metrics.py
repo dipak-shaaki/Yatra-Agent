@@ -38,9 +38,7 @@ def record_turn(llm_calls: int, failed: bool = False) -> None:
             _metrics.errors += 1
 
 
-def record_llm_usage(
-    model: str, prompt_tokens: int | None, completion_tokens: int | None
-) -> None:
+def record_llm_usage(prompt_tokens: int | None, completion_tokens: int | None) -> None:
     """Accumulate token counts; cost uses the configured per-model rates."""
     settings = get_settings()
     prompt_tokens = prompt_tokens or 0

@@ -19,6 +19,8 @@ import sys
 import time
 from pathlib import Path
 
+from scripts.eval_paths import input_path, output_path
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from eval.answer_judge import judge_answer
@@ -64,6 +66,29 @@ def _percentile(values: list[float], p: float) -> float:
     return ordered[index]
 
 
+async def _judge_result(result: dict) -> dict:
+    if result.get("error") or not result.get("actual_answer"):
+        return {**result, "verdicts": None, "passed": False}
+
+    verdicts = await judge_answer(
+        result["question"],
+        result.get("expected_answer") or "",
+        result["actual_answer"],
+        result.get("retrieved_context") or [],
+    )
+    required = _required_verdicts(result)
+    failed = [verdict for verdict in required if verdicts.get(verdict) is not True]
+    return {
+        **result,
+        "verdicts": verdicts,
+        "required_verdicts": required,
+        "passed": not failed,
+        "tool_selection_pass": _tool_selection_pass(
+            result.get("expected_tools") or [], result.get("tools_called") or []
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -86,7 +111,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    with open(args.results) as f:
+    try:
+        results_path = input_path(args.results)
+        judged_path = output_path(args.judged)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    with results_path.open(encoding="utf-8") as f:
         results = [json.loads(line) for line in f if line.strip()]
     if not results:
         print(f"No results in {args.results}", file=sys.stderr)
@@ -95,34 +126,19 @@ def main() -> int:
     print(f"Judging {len(results)} results with the answer judge...\n")
     judged = []
     for result in results:
-        if result.get("error") or not result.get("actual_answer"):
+        judged_result = asyncio.run(_judge_result(result))
+        judged.append(judged_result)
+        verdicts = judged_result["verdicts"]
+        if verdicts is None:
             print(f"[{result['id']}] ERROR — no answer to judge: {result.get('error')}")
-            judged.append({**result, "verdicts": None, "passed": False})
             continue
-
-        verdicts = asyncio.run(
-            judge_answer(
-                result["question"],
-                result.get("expected_answer") or "",
-                result["actual_answer"],
-                result.get("retrieved_context") or [],
-            )
-        )
-        required = _required_verdicts(result)
-        failed = [v for v in required if verdicts.get(v) is not True]
-        passed = not failed
-        tool_pass = _tool_selection_pass(
-            result.get("expected_tools") or [], result.get("tools_called") or []
-        )
-        judged.append(
-            {
-                **result,
-                "verdicts": verdicts,
-                "required_verdicts": required,
-                "passed": passed,
-                "tool_selection_pass": tool_pass,
-            }
-        )
+        failed = [
+            verdict
+            for verdict in judged_result["required_verdicts"]
+            if verdicts.get(verdict) is not True
+        ]
+        passed = judged_result["passed"]
+        tool_pass = judged_result["tool_selection_pass"]
 
         print(
             f"[{result['id']}] {'PASS' if passed else 'FAIL'}"
@@ -133,7 +149,8 @@ def main() -> int:
             print(f"  failed verdicts: {failed} — {verdicts.get('notes', '')}")
         time.sleep(args.delay)
 
-    with open(args.judged, "w") as f:
+    judged_path.parent.mkdir(parents=True, exist_ok=True)
+    with judged_path.open("w", encoding="utf-8") as f:
         f.writelines(json.dumps(j) + "\n" for j in judged)
 
     scored = [j for j in judged if j["verdicts"] is not None]
@@ -169,7 +186,7 @@ def main() -> int:
     errors = [j for j in judged if j["verdicts"] is None]
     if errors:
         print(f"\n  WARNING: {len(errors)} cases produced no answer at runtime")
-    print(f"\nSaved to {args.judged}")
+    print(f"\nSaved to {judged_path}")
     return 0
 
 

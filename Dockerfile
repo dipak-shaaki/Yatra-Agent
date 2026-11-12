@@ -8,6 +8,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
 
 WORKDIR /app
 
+# The application writes only to its Chroma database and model cache.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin yatra \
+    && mkdir -p /app/data/chroma_db /cache/huggingface \
+    && chown -R yatra:yatra /app/data /cache
+
 # Dependencies first: this layer caches independently of code changes.
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-build
@@ -18,6 +23,8 @@ COPY data/corpus/ data/corpus/
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/cache/huggingface
+
+USER yatra
 
 EXPOSE 8000
 

@@ -197,8 +197,10 @@ class TurnGraph:
         await self._stage2(turn, last_assistant_message)
         if turn.short_circuited:
             return turn
-        async for _ in self._agent_stream(turn):
-            pass
+        stream = self._agent_stream(turn)
+        async for _ in stream:
+            # Draining the generator runs the agent and populates the Turn.
+            continue
         return turn
 
     async def run_stream(self, turn: Turn) -> AsyncGenerator[str]:

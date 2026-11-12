@@ -11,10 +11,13 @@ project root, so `app` imports resolve without sys.path hacks.
 
 import argparse
 import json
+import math
 import random
 import sys
 from collections.abc import Callable
 from pathlib import Path
+
+from scripts.eval_paths import input_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EVAL_DIRS = [
@@ -52,18 +55,23 @@ def load_cases_with_chunks(eval_dirs: list[Path]) -> list[dict]:
     AND expect search_destinations — the only tool that runs hybrid_search.
     Discovery/budget questions go through the metadata tools instead, and
     out_of_scope/filler/unclear cases have no labels by design."""
-    cases = []
-    for eval_dir in eval_dirs:
-        for jsonl_file in sorted(eval_dir.glob("*.jsonl")):
-            with open(jsonl_file) as f:
-                for line in f:
-                    if line.strip():
-                        case = json.loads(line)
-                        if case.get(
-                            "source_chunks"
-                        ) and "search_destinations" in case.get("expected_tools", []):
-                            cases.append(case)
-    return cases
+    return [
+        case
+        for eval_dir in eval_dirs
+        for jsonl_file in sorted(eval_dir.glob("*.jsonl"))
+        for case in _load_scoreable_cases(jsonl_file)
+    ]
+
+
+def _load_scoreable_cases(jsonl_file: Path) -> list[dict]:
+    with jsonl_file.open(encoding="utf-8") as source:
+        cases = [json.loads(line) for line in source if line.strip()]
+    return [
+        case
+        for case in cases
+        if case.get("source_chunks")
+        and "search_destinations" in case.get("expected_tools", [])
+    ]
 
 
 def bootstrap_ci(values: list[float], samples: int, seed: int) -> tuple[float, float]:
@@ -151,7 +159,11 @@ def main() -> int:
     # (P=0.20 / R=0.96 / MRR=0.83). Precision tops out near |expected|/K
     # (usually 1 labeled chunk per question) — do not "fix" the low bar by
     # raising it without relabeling more chunks per case.
-    cases = load_cases_with_chunks(args.eval_dir or DEFAULT_EVAL_DIRS)
+    try:
+        eval_dirs = [input_path(path) for path in (args.eval_dir or DEFAULT_EVAL_DIRS)]
+    except ValueError as exc:
+        parser.error(str(exc))
+    cases = load_cases_with_chunks(eval_dirs)
     retrieve = _retrievers()[args.retriever]
     print(f"Scoring {args.retriever} retrieval on {len(cases)} cases (K={K})\n")
 
@@ -162,7 +174,9 @@ def main() -> int:
         m = precision_recall_rr(retrieved, case["source_chunks"])
         metrics.append(m)
         marker = ""
-        if m["rr"] == 0.0:  # none of the labeled chunks made the top K
+        if math.isclose(
+            m["rr"], 0.0, abs_tol=1e-12
+        ):  # none of the labeled chunks made the top K
             marker = "  <-- MISS"
             misses.append(case["id"])
         print(

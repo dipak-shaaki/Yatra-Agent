@@ -43,12 +43,13 @@ async def lifespan(app: FastAPI):
             "Redis unavailable at startup (%s) — session memory disabled", e
         )
 
-    yield
-
     try:
-        get_redis_client().close()
-    except Exception as e:
-        _logger.warning("Redis close failed: %s", e)
+        yield
+    finally:
+        try:
+            get_redis_client().close()
+        except Exception as e:
+            _logger.warning("Redis close failed: %s", e)
 
 
 def _session_fingerprint(token: str | None) -> str:
@@ -83,7 +84,10 @@ def create_app() -> FastAPI:
         """Per-process turn/LLM/token/cost counters (sum across workers)."""
         return metrics_snapshot()
 
-    @app.get("/ready")
+    @app.get(
+        "/ready",
+        responses={503: {"description": "A required backing store is unavailable"}},
+    )
     async def ready():
         """Readiness for orchestration: 200 only when both backing stores
         answer. /health is liveness (always ok once booted); this catches a

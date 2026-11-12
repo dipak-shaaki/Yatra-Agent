@@ -15,14 +15,101 @@ no matter where it is launched from; every knob is a CLI flag.
 """
 
 import argparse
+import ipaddress
 import json
+import socket
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import httpcore
 import httpx
 
+from scripts.eval_paths import input_path, output_path
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+class _PinnedNetworkBackend(httpcore.SyncBackend):
+    """Resolve each socket destination once, validate it, and connect to that IP."""
+
+    def __init__(self, allow_private: bool) -> None:
+        self.allow_private = allow_private
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ):
+        addresses = list(
+            dict.fromkeys(
+                item[4][0]
+                for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            )
+        )
+        if not addresses:
+            raise OSError(f"API host resolved to no addresses: {host}")
+        resolved = [
+            ipaddress.ip_address(address.split("%", 1)[0]) for address in addresses
+        ]
+        if not self.allow_private and any(
+            not address.is_global for address in resolved
+        ):
+            raise OSError(f"API host resolves to a non-public address: {host}")
+        # Passing a numeric address to SyncBackend prevents a second DNS lookup
+        # between validation and connect (the TLS layer still uses the URL host).
+        last_error = None
+        for address in resolved:
+            try:
+                return super().connect_tcp(
+                    str(address), port, timeout, local_address, socket_options
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+
+class _PinnedHTTPTransport(httpx.HTTPTransport):
+    def __init__(self, allow_private: bool) -> None:
+        super().__init__(trust_env=False)
+        self._pool._network_backend = _PinnedNetworkBackend(allow_private)
+
+
+def validate_api_url(url: str, *, allow_private: bool = False) -> str:
+    """Require HTTP(S) and reject DNS answers that are not public by default."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("API URL must use http:// or https:// and include a host")
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("API URL must not contain credentials or a fragment")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                parsed.hostname, port, type=socket.SOCK_STREAM
+            )
+        }
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"API host could not be resolved: {parsed.hostname}") from exc
+    if not addresses:
+        raise ValueError("API host resolved to no addresses")
+    if not allow_private:
+        if parsed.hostname.lower().rstrip(".") in {
+            "localhost",
+            "metadata.google.internal",
+        }:
+            raise ValueError("API host is not permitted")
+        for address in addresses:
+            ip = ipaddress.ip_address(address.split("%", 1)[0])
+            if not ip.is_global:
+                raise ValueError(f"API host resolves to a non-public address: {ip}")
+    return url.rstrip("/")
 
 
 def load_cases(eval_dir: Path) -> list[dict]:
@@ -40,11 +127,11 @@ def load_cases(eval_dir: Path) -> list[dict]:
 def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) -> dict:
     start = time.perf_counter()
     try:
-        session_token = (
-            client.post(f"{base_url}/session", timeout=timeout)
-            .raise_for_status()
-            .json()["session_token"]
-        )
+        session_response = client.post(f"{base_url}/session", timeout=timeout)
+        if 300 <= session_response.status_code < 400:
+            raise ValueError("API redirects are not followed")
+        session_response.raise_for_status()
+        session_token = session_response.json()["session_token"]
 
         response = client.post(
             f"{base_url}/chat",
@@ -52,6 +139,8 @@ def run_case(case: dict, client: httpx.Client, base_url: str, timeout: float) ->
             headers={"X-Session-Token": session_token},
             timeout=timeout,
         )
+        if 300 <= response.status_code < 400:
+            raise ValueError("API redirects are not followed")
         response.raise_for_status()
         body = response.json()
         answer = body.get("answer")
@@ -93,6 +182,11 @@ def main() -> int:
         help="Base URL of the running Yatra API (default: %(default)s)",
     )
     parser.add_argument(
+        "--allow-private-api",
+        action="store_true",
+        help="Allow private API addresses for an explicitly trusted local evaluation server",
+    )
+    parser.add_argument(
         "--eval-dir",
         type=Path,
         default=PROJECT_ROOT / "eval" / "cases",
@@ -121,21 +215,33 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cases = load_cases(args.eval_dir)
+    try:
+        api_url = validate_api_url(args.api_url, allow_private=args.allow_private_api)
+        eval_dir = input_path(args.eval_dir)
+        results_path = output_path(args.results)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    cases = load_cases(eval_dir)
     if args.limit:
         cases = cases[: args.limit]
     if not cases:
-        print(f"No cases found in {args.eval_dir}", file=sys.stderr)
+        print(f"No cases found in {eval_dir}", file=sys.stderr)
         return 1
 
-    print(f"Running {len(cases)} eval cases against {args.api_url}...\n")
+    print(f"Running {len(cases)} eval cases against {api_url}...\n")
 
     results = []
-    with httpx.Client() as client:
+    with httpx.Client(
+        transport=_PinnedHTTPTransport(args.allow_private_api),
+        follow_redirects=False,
+        trust_env=False,
+        timeout=args.timeout,
+    ) as client:
         for index, case in enumerate(cases):
             print(f"[{case['id']}] ({case.get('category')}) {case['question']}")
 
-            result = run_case(case, client, args.api_url, args.timeout)
+            result = run_case(case, client, api_url, args.timeout)
             results.append(result)
 
             if result["error"]:
@@ -151,12 +257,12 @@ def main() -> int:
             if index < len(cases) - 1 and args.delay > 0:
                 time.sleep(args.delay)
 
-    args.results.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.results, "w") as f:
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    with results_path.open("w", encoding="utf-8") as f:
         for result in results:
             f.write(json.dumps(result) + "\n")
 
-    print(f"Saved {len(results)} results to {args.results}")
+    print(f"Saved {len(results)} results to {results_path}")
     return 0
 
 

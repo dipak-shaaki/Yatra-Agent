@@ -55,6 +55,44 @@ class AgentResult:
     failed: bool = False
 
 
+@dataclass
+class _ProviderRound:
+    content: str = ""
+    usage: Any = None
+    tool_calls: dict[int, dict] = field(default_factory=dict)
+
+
+def _append_tool_deltas(tool_calls: dict[int, dict], deltas: list) -> None:
+    for delta in deltas:
+        call = tool_calls.setdefault(
+            delta.index, {"id": "", "name": "", "arguments": ""}
+        )
+        if delta.id:
+            call["id"] = delta.id
+        if delta.function.name:
+            call["name"] += delta.function.name
+        if delta.function.arguments:
+            call["arguments"] += delta.function.arguments
+
+
+async def _consume_provider_stream(
+    stream, state: _ProviderRound
+) -> AsyncGenerator[str]:
+    """Collect one provider round while yielding only visible answer text."""
+    async for chunk in stream:
+        metadata = getattr(chunk, "x_groq", None)
+        if metadata and metadata.usage:
+            state.usage = metadata.usage
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta.content:
+            state.content += delta.content
+            yield delta.content
+        if delta.tool_calls:
+            _append_tool_deltas(state.tool_calls, delta.tool_calls)
+
+
 def _system_prompt() -> str:
     names = destination_names()
     _destinations = ", ".join(names)
@@ -160,61 +198,26 @@ async def run_agent_stream(
         # Budget the whole provider round (connect + stream) per call; the
         # SDK also retries connection/5xx/429 errors up to groq_max_retries.
         llm_start = time.perf_counter()
-        content_buffer = ""
-        tool_calls_buffer: dict[int, dict] = {}
-        usage = None
+        provider_round = _ProviderRound()
         try:
-            async with _llm_semaphore:
-                async with asyncio.timeout(settings.groq_timeout_seconds):
-                    # Groq's TypedDict param union cannot express our
-                    # heterogeneous message dicts, and the unpacked
-                    # reasoning_params dict defeats overload matching — runtime
-                    # accepts both fine.
-                    stream = await client.chat.completions.create(  # type: ignore[call-overload]
-                        model=settings.agent_model,
-                        messages=messages,
-                        tools=get_tool_schemas(),
-                        tool_choice="auto",
-                        stream=True,
-                        max_tokens=settings.final_answer_max_tokens,
-                        **reasoning_params(
-                            settings.agent_model, settings.reasoning_effort
-                        ),
-                    )
-                    run.llm_calls += 1
+            async with _llm_semaphore, asyncio.timeout(settings.groq_timeout_seconds):
+                # Groq's TypedDict param union cannot express our
+                # heterogeneous message dicts, and the unpacked
+                # reasoning_params dict defeats overload matching — runtime
+                # accepts both fine.
+                stream = await client.chat.completions.create(  # type: ignore[call-overload]
+                    model=settings.agent_model,
+                    messages=messages,
+                    tools=get_tool_schemas(),
+                    tool_choice="auto",
+                    stream=True,
+                    max_tokens=settings.final_answer_max_tokens,
+                    **reasoning_params(settings.agent_model, settings.reasoning_effort),
+                )
+                run.llm_calls += 1
 
-                    async for chunk in stream:
-                        # Usage rides on x_groq in the final chunk (some chunks
-                        # carry no choices at all — skip those first).
-                        if getattr(chunk, "x_groq", None) and chunk.x_groq.usage:
-                            usage = chunk.x_groq.usage
-                        if not chunk.choices:
-                            continue
-                        delta = chunk.choices[0].delta
-
-                        if delta.content:
-                            content_buffer += delta.content
-                            yield delta.content
-
-                        if delta.tool_calls:
-                            for tc_delta in delta.tool_calls:
-                                idx = tc_delta.index
-                                if idx not in tool_calls_buffer:
-                                    tool_calls_buffer[idx] = {
-                                        "id": "",
-                                        "name": "",
-                                        "arguments": "",
-                                    }
-                                if tc_delta.id:
-                                    tool_calls_buffer[idx]["id"] = tc_delta.id
-                                if tc_delta.function.name:
-                                    tool_calls_buffer[idx]["name"] += (
-                                        tc_delta.function.name
-                                    )
-                                if tc_delta.function.arguments:
-                                    tool_calls_buffer[idx]["arguments"] += (
-                                        tc_delta.function.arguments
-                                    )
+                async for text in _consume_provider_stream(stream, provider_round):
+                    yield text
         except Exception as e:
             log_event(
                 "agent_llm_failed",
@@ -223,8 +226,8 @@ async def run_agent_stream(
                 detail=str(e)[:300],
             )
             run.failed = True
-            if content_buffer.strip():
-                run.answer = content_buffer + AGENT_ERROR_SUFFIX
+            if provider_round.content.strip():
+                run.answer = provider_round.content + AGENT_ERROR_SUFFIX
                 yield AGENT_ERROR_SUFFIX
             else:
                 run.answer = AGENT_ERROR_REPLY
@@ -239,24 +242,23 @@ async def run_agent_stream(
             time_secs=llm_elapsed_s,
             **(
                 {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
+                    "prompt_tokens": provider_round.usage.prompt_tokens,
+                    "completion_tokens": provider_round.usage.completion_tokens,
+                    "total_tokens": provider_round.usage.total_tokens,
                 }
-                if usage
+                if provider_round.usage
                 else {}
             ),
         )
-        if usage:
+        if provider_round.usage:
             record_llm_usage(
-                settings.agent_model,
-                getattr(usage, "prompt_tokens", 0),
-                getattr(usage, "completion_tokens", 0),
+                getattr(provider_round.usage, "prompt_tokens", 0),
+                getattr(provider_round.usage, "completion_tokens", 0),
             )
 
-        if not tool_calls_buffer:
+        if not provider_round.tool_calls:
             total_s = f"{time.perf_counter() - turn_start:.2f}"
-            if not content_buffer.strip():
+            if not provider_round.content.strip():
                 # The model stopped without content — typically reasoning
                 # tokens ate the budget. Fail loudly instead of streaming
                 # an empty answer.
@@ -272,13 +274,13 @@ async def run_agent_stream(
             log_event(
                 "agent_final_answer", iterations=iteration + 1, total_time_secs=total_s
             )
-            run.answer = content_buffer
+            run.answer = provider_round.content
             return
 
         messages.append(
             {
                 "role": "assistant",
-                "content": content_buffer or None,
+                "content": provider_round.content or None,
                 "tool_calls": [
                     {
                         "id": tc["id"],
@@ -288,14 +290,14 @@ async def run_agent_stream(
                             "arguments": tc["arguments"],
                         },
                     }
-                    for tc in tool_calls_buffer.values()
+                    for tc in provider_round.tool_calls.values()
                 ],
             }
         )
 
         # Independent tool calls in one round run concurrently.
         tool_messages = await asyncio.gather(
-            *(_execute_tool_call(tc, run) for tc in tool_calls_buffer.values())
+            *(_execute_tool_call(tc, run) for tc in provider_round.tool_calls.values())
         )
         messages.extend(tool_messages)
 

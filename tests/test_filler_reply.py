@@ -1,6 +1,7 @@
 """Dynamic filler replies: small model, no tools, template fallback."""
 
 import asyncio
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -75,7 +76,7 @@ def test_stage1_greeting_is_dynamic_end_to_end(monkeypatch) -> None:
     fake = _client(content="Hello! Where in Nepal would you like to go?")
     monkeypatch.setattr(filler, "get_async_groq_client", lambda: fake)
 
-    turn = Turn(query="hello", sender="filler-dynamic-1")
+    turn = Turn(query="hello", sender=f"filler-dynamic-{uuid.uuid4()}")
     asyncio.run(TurnGraph().run(turn))
 
     assert turn.short_circuited
@@ -87,7 +88,7 @@ def test_acknowledgment_stays_templated(monkeypatch) -> None:
     fake = _client(content="should not be used")
     monkeypatch.setattr(filler, "get_async_groq_client", lambda: fake)
 
-    turn = Turn(query="thanks", sender="filler-dynamic-2")
+    turn = Turn(query="thanks", sender=f"filler-dynamic-{uuid.uuid4()}")
     asyncio.run(TurnGraph().run(turn))
 
     assert turn.reply in _fallback("acknowledgment")

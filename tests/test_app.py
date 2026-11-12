@@ -100,7 +100,8 @@ def test_session_flow_and_history_isolation() -> None:
     client = TestClient(app)
     token_a = client.post("/api/v1/session").json()["session_token"]
     token_b = client.post("/api/v1/session").json()["session_token"]
-    assert token_a and token_a != token_b
+    assert token_a
+    assert token_a != token_b
 
     res = client.post(
         "/api/v1/chat",

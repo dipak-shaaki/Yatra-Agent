@@ -143,7 +143,7 @@ body {
   padding: 7px 13px;
   font-size: 13px;
   cursor: pointer;
-  transition: 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .chip:hover {
@@ -251,7 +251,7 @@ body {
   font-size: 15px;
   font-weight: 550;
   cursor: pointer;
-  transition: 0.15s ease;
+  transition: filter 0.15s ease, transform 0.15s ease;
 }
 
 .composer button:not(:disabled):hover {
@@ -265,4 +265,13 @@ body {
 .composer button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

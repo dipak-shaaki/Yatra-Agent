@@ -88,7 +88,6 @@ async def classify_stage2(message: str, last_assistant_message: str = "") -> str
         usage = getattr(response, "usage", None)
         if usage:
             record_llm_usage(
-                settings.router_model,
                 getattr(usage, "prompt_tokens", 0),
                 getattr(usage, "completion_tokens", 0),
             )

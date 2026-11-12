@@ -1,8 +1,13 @@
 """Unit tests for the eval harness logic (no LLM, no server, no index)."""
 
+import pytest
+
 from eval.answer_judge import _build_prompt
+from scripts import run_eval
 from scripts.eval_answers import _percentile, _required_verdicts, _tool_selection_pass
+from scripts.eval_paths import input_path
 from scripts.eval_retrieval import bootstrap_ci, precision_recall_rr
+from scripts.run_eval import validate_api_url
 
 
 def test_required_verdicts_follow_category_and_flags() -> None:
@@ -61,17 +66,23 @@ def test_percentile_basic() -> None:
 def test_bootstrap_ci_brackets_mean_and_is_reproducible() -> None:
     values = [0.2, 1.0, 0.5, 0.25, 1.0, 0.0]
     low, high = bootstrap_ci(values, samples=200, seed=7)
-    assert low <= sum(values) / len(values) <= high
+    mean = sum(values) / len(values)
+    assert low <= mean
+    assert mean <= high
     assert (low, high) == bootstrap_ci(values, samples=200, seed=7)
     assert bootstrap_ci([], samples=200, seed=7) == (0.0, 0.0)
 
 
 def test_precision_recall_rr_scores_ranked_hits() -> None:
     m = precision_recall_rr(["a", "b", "c", "d", "e"], ["b"])
-    assert m == {"precision": 0.2, "recall": 1.0, "rr": 0.5}
+    assert m["precision"] == 0.2
+    assert m["recall"] == 1.0
+    assert m["rr"] == 0.5
 
     miss = precision_recall_rr(["a", "b", "c", "d", "e"], ["z"])
-    assert miss == {"precision": 0.0, "recall": 0.0, "rr": 0.0}
+    assert miss["precision"] == 0.0
+    assert miss["recall"] == 0.0
+    assert miss["rr"] == 0.0
 
 
 def test_judge_prompt_splices_via_delimited_blocks() -> None:
@@ -80,3 +91,34 @@ def test_judge_prompt_splices_via_delimited_blocks() -> None:
     prompt = _build_prompt("{question}", "{expected}", "{context}", "{actual}")
     assert "<<<Q\n{question}\n>>>" in prompt
     assert "<<<A\n{actual}\n>>>" in prompt
+
+
+def test_eval_input_must_remain_inside_eval_tree(tmp_path) -> None:
+    with pytest.raises(ValueError, match="inside"):
+        input_path(tmp_path)
+
+
+def test_eval_input_rejects_symlinks(tmp_path) -> None:
+    link = run_eval.PROJECT_ROOT / "eval" / "test-outside-link"
+    link.symlink_to(tmp_path)
+    try:
+        with pytest.raises(ValueError, match="symlinks"):
+            input_path(link)
+    finally:
+        link.unlink()
+
+
+def test_api_url_requires_public_http_destination(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_eval.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 8000))],
+    )
+    with pytest.raises(ValueError, match="non-public"):
+        validate_api_url("http://example.test")
+    assert validate_api_url("http://example.test", allow_private=True)
+
+
+def test_api_url_rejects_non_http_schemes() -> None:
+    with pytest.raises(ValueError, match="http://"):
+        validate_api_url("file:///etc/passwd")

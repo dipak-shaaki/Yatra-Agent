@@ -14,7 +14,11 @@ from app.services.document_service import upsert_document
 router = APIRouter()
 
 
-@router.post("/documents/upsert", dependencies=[Depends(require_admin)])
+@router.post(
+    "/documents/upsert",
+    dependencies=[Depends(require_admin)],
+    responses={422: {"description": "Document content failed schema validation"}},
+)
 async def upsert_document_endpoint(request: DocumentUpsertRequest):
     try:
         return await asyncio.to_thread(

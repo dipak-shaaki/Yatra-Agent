@@ -16,6 +16,7 @@ type is token | meta | error | done. The JSON mode returns ChatResponse.
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -38,6 +39,7 @@ router = APIRouter()
 STREAM_ERROR_MESSAGE = (
     "Sorry, the connection to the model failed. Please try again in a moment."
 )
+SESSION_STORE_UNAVAILABLE = "Session store unavailable, try again shortly"
 
 
 class SessionResponse(BaseModel):
@@ -74,6 +76,10 @@ class DebugQueryRequest(BaseModel):
     n_results: int | None = None
 
 
+class DebugSearchResponse(BaseModel):
+    results: list[dict]
+
+
 def _authorized_sender(x_session_token: str | None) -> str:
     """Validate the session token; returns the sender id (the token itself)."""
     if not x_session_token:
@@ -87,9 +93,7 @@ def _authorized_sender(x_session_token: str | None) -> str:
         raise
     except Exception:
         # Redis unavailable: fail closed rather than trusting the client.
-        raise HTTPException(
-            status_code=503, detail="Session store unavailable, try again shortly"
-        )
+        raise HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE)
     return x_session_token
 
 
@@ -100,9 +104,7 @@ def _enforce_rate_limit(sender: str) -> None:
             sender, settings.chat_rate_limit_per_minute
         )
     except Exception:
-        raise HTTPException(
-            status_code=503, detail="Session store unavailable, try again shortly"
-        )
+        raise HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE)
     if not allowed:
         raise HTTPException(
             status_code=429,
@@ -111,15 +113,23 @@ def _enforce_rate_limit(sender: str) -> None:
         )
 
 
-@router.post("/session", response_model=SessionResponse)
+@router.post(
+    "/session",
+    response_model=SessionResponse,
+    responses={
+        429: {
+            "model": ErrorResponse,
+            "description": "Session mint rate limit exceeded",
+        },
+        503: {"model": ErrorResponse, "description": "Session store unavailable"},
+    },
+)
 async def create_session(request: Request) -> SessionResponse:
     client_ip = request.client.host if request.client else "unknown"
     try:
         allowed, retry_after = check_session_mint_limit(client_ip)
     except Exception:
-        raise HTTPException(
-            status_code=503, detail="Session store unavailable, try again shortly"
-        )
+        raise HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE)
     if not allowed:
         raise HTTPException(
             status_code=429,
@@ -129,24 +139,41 @@ async def create_session(request: Request) -> SessionResponse:
     try:
         return SessionResponse(session_token=create_session_token())
     except Exception:
-        raise HTTPException(
-            status_code=503, detail="Session store unavailable, try again shortly"
-        )
+        raise HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE)
 
 
-@router.post("/debug/search", dependencies=[Depends(require_admin)])
-async def debug_search(request: DebugQueryRequest):
-    return {
-        "results": await asyncio.to_thread(
-            search_destinations, request.query, n_results=request.n_results
-        )
-    }
+@router.post(
+    "/debug/search",
+    response_model=DebugSearchResponse,
+    dependencies=[Depends(require_admin)],
+    responses={403: {"model": ErrorResponse, "description": "Admin token is invalid"}},
+)
+async def debug_search(request: DebugQueryRequest) -> DebugSearchResponse:
+    results = await asyncio.to_thread(
+        search_destinations, request.query, n_results=request.n_results
+    )
+    return DebugSearchResponse(results=results)
 
 
-@router.post("/chat", response_model=ChatResponse, response_model_exclude_none=True)
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    response_model_exclude_none=True,
+    responses={
+        401: {
+            "model": ErrorResponse,
+            "description": "Missing, unknown, or expired session token",
+        },
+        429: {"model": ErrorResponse, "description": "Chat rate limit exceeded"},
+        503: {
+            "model": ErrorResponse,
+            "description": "Session store or chat service unavailable",
+        },
+    },
+)
 async def chat(
     request: ChatRequest,
-    x_session_token: str | None = Header(default=None),
+    x_session_token: Annotated[str | None, Header()] = None,
 ):
     """Send a message to Yatra.
 

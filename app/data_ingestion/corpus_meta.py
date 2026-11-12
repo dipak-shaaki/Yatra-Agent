@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import get_settings
-from app.data_ingestion.chunker import SECTION_SPLIT_RE, chunk_corpus_dir
+from app.data_ingestion.chunker import chunk_corpus_dir, section_titles
 from app.data_ingestion.corpus_version import current_corpus_version
 from app.data_ingestion.frontmatter import parse_frontmatter
 
@@ -69,7 +69,7 @@ def _load_snapshot(corpus_dir: str, version: str) -> CorpusSnapshot:
             Destination(
                 **data,
                 source_file=md_file.name,
-                sections=tuple(SECTION_SPLIT_RE.findall(body)),
+                sections=tuple(section_titles(body)),
             )
         )
     return CorpusSnapshot(

@@ -3,13 +3,10 @@ Parses a destination corpus markdown file (validated YAML frontmatter +
 ## sections) into a list of chunk dicts ready for embedding + Chroma storage.
 """
 
-import re
 from pathlib import Path
 from typing import Any
 
 from app.data_ingestion.frontmatter import parse_frontmatter
-
-SECTION_SPLIT_RE = re.compile(r"^##[ \t]+([^\n]+)[ \t]*$", re.MULTILINE)
 
 
 def _flatten_metadata(
@@ -35,14 +32,59 @@ def _flatten_metadata(
 
 def _strip_sources_footer(body: str) -> str:
     """Drop a trailing '---\\n*Sources: ...*' footer if present."""
-    return re.split(r"\n---[ \t]*\n\*Sources:[^\n]*(?:\n|$)", body, maxsplit=1)[
-        0
-    ].strip()
+    lines = body.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        if line.strip() == "---" and lines[index + 1].startswith("*Sources:"):
+            return "\n".join(lines[:index]).strip()
+    return body.strip()
 
 
 def _strip_title_line(body: str) -> str:
     """Drop the leading '# Title' line — it's document-level, not a section."""
-    return re.sub(r"^#[ \t]+[^\n]+\n", "", body, count=1).strip()
+    title, separator, remainder = body.partition("\n")
+    if (
+        separator
+        and title.startswith("#")
+        and len(title) > 1
+        and title[1].isspace()
+        and title[1:].strip()
+    ):
+        return remainder.strip()
+    return body.strip()
+
+
+def _split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
+    """Return intro text and level-two sections without regex backtracking."""
+    lines = body.splitlines(keepends=True)
+    headings: list[tuple[int, int, str]] = []
+    offset = 0
+    for line in lines:
+        heading_line = line.rstrip("\r\n")
+        if (
+            heading_line.startswith("##")
+            and len(heading_line) > 2
+            and heading_line[2].isspace()
+        ):
+            title = heading_line[2:].strip()
+            if title:
+                headings.append((offset, offset + len(line), title))
+        offset += len(line)
+
+    if not headings:
+        return body.strip(), []
+
+    first_start = headings[0][0]
+    sections = []
+    for index, (_, content_start, title) in enumerate(headings):
+        content_end = headings[index + 1][0] if index + 1 < len(headings) else len(body)
+        sections.append((title, body[content_start:content_end].strip()))
+    return body[:first_start].strip(), sections
+
+
+def section_titles(body: str) -> list[str]:
+    """Return normalized level-two section titles from markdown text."""
+    _, sections = _split_sections(body)
+    return [title for title, _ in sections]
 
 
 def chunk_document(file_path: str | Path) -> list[dict[str, Any]]:
@@ -66,12 +108,7 @@ def chunk_text(raw_text: str, *, stem: str, source_file: str) -> list[dict[str, 
 
     chunks = []
 
-    first_header_match = SECTION_SPLIT_RE.search(body)
-    intro_text = (
-        body[: first_header_match.start()].strip()
-        if first_header_match
-        else body.strip()
-    )
+    intro_text, sections = _split_sections(body)
     if intro_text:
         chunks.append(
             {
@@ -85,11 +122,7 @@ def chunk_text(raw_text: str, *, stem: str, source_file: str) -> list[dict[str, 
             }
         )
 
-    headers = [header.strip() for header in SECTION_SPLIT_RE.findall(body)]
-    sections = SECTION_SPLIT_RE.split(body)[1:]
-
-    for i, header in enumerate(headers):
-        section_text = sections[2 * i + 1].strip() if len(sections) > 2 * i + 1 else ""
+    for header, section_text in sections:
         if not section_text:
             continue
         chunk_id = f"{stem}__{header.lower().replace(' ', '_').replace('/', '_')}"

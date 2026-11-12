@@ -133,6 +133,16 @@ def _assistant_tool_message(state: _ProviderRound) -> dict:
     }
 
 
+def _provider_client(run: AgentResult):
+    try:
+        return get_async_groq_client()
+    except Exception as exc:
+        log_event("agent_client_unavailable", error=str(exc))
+        run.failed = True
+        run.answer = AGENT_ERROR_REPLY
+        return None
+
+
 def _system_prompt() -> str:
     names = destination_names()
     _destinations = ", ".join(names)
@@ -225,12 +235,8 @@ async def run_agent_stream(
     )
     messages.append({"role": "user", "content": user_query})
 
-    try:
-        client = get_async_groq_client()
-    except Exception as e:
-        log_event("agent_client_unavailable", error=str(e))
-        run.failed = True
-        run.answer = AGENT_ERROR_REPLY
+    client = _provider_client(run)
+    if client is None:
         yield AGENT_ERROR_REPLY
         return
 

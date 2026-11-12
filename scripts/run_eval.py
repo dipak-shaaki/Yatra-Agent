@@ -128,22 +128,18 @@ def load_cases(eval_dir: Path) -> list[dict]:
 def run_case(
     case: dict,
     client: httpx.Client,
-    base_url: str,
     timeout: float,
-    *,
-    allow_private_api: bool = False,
 ) -> dict:
     start = time.perf_counter()
     try:
-        base_url = validate_api_url(base_url, allow_private=allow_private_api)
-        session_response = client.post(f"{base_url}/session", timeout=timeout)
+        session_response = client.post("/session", timeout=timeout)
         if 300 <= session_response.status_code < 400:
             raise ValueError("API redirects are not followed")
         session_response.raise_for_status()
         session_token = session_response.json()["session_token"]
 
         response = client.post(
-            f"{base_url}/chat",
+            "/chat",
             json={"query": case["question"], "stream": False},
             headers={"X-Session-Token": session_token},
             timeout=timeout,
@@ -200,7 +196,9 @@ def _run_cases(
     allow_private_api: bool,
 ) -> list[dict]:
     results = []
+    validated_api_url = validate_api_url(api_url, allow_private=allow_private_api)
     with httpx.Client(
+        base_url=validated_api_url,
         transport=_PinnedHTTPTransport(allow_private_api),
         follow_redirects=False,
         trust_env=False,
@@ -211,9 +209,7 @@ def _run_cases(
             result = run_case(
                 case,
                 client,
-                api_url,
                 timeout,
-                allow_private_api=allow_private_api,
             )
             results.append(result)
             _print_case_result(result)

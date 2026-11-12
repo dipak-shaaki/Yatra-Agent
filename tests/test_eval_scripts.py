@@ -7,7 +7,7 @@ from scripts import run_eval
 from scripts.eval_answers import _percentile, _required_verdicts, _tool_selection_pass
 from scripts.eval_paths import input_path
 from scripts.eval_retrieval import bootstrap_ci, precision_recall_rr
-from scripts.run_eval import run_case, validate_api_url
+from scripts.run_eval import validate_api_url
 
 
 def test_required_verdicts_follow_category_and_flags() -> None:
@@ -124,27 +124,12 @@ def test_api_url_rejects_non_http_schemes() -> None:
         validate_api_url("file:///etc/passwd")
 
 
-def test_run_case_validates_destination_before_http_calls(monkeypatch) -> None:
+def test_api_url_validation_rejects_private_dns_targets(monkeypatch) -> None:
     monkeypatch.setattr(
         run_eval.socket,
         "getaddrinfo",
         lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 8000))],
     )
 
-    class RecordingClient:
-        calls = 0
-
-        def post(self, *args, **kwargs):
-            self.calls += 1
-            raise AssertionError("unsafe destination must not reach the HTTP client")
-
-    client = RecordingClient()
-    result = run_case(
-        {"id": "unsafe", "question": "test"},
-        client,
-        "http://example.test/api/v1",
-        timeout=1,
-    )
-
-    assert "non-public address" in result["error"]
-    assert client.calls == 0
+    with pytest.raises(ValueError, match="non-public address"):
+        validate_api_url("http://example.test/api/v1")

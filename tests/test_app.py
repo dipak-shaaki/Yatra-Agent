@@ -168,3 +168,91 @@ def test_chat_rate_limit_returns_429(monkeypatch) -> None:
     finally:
         monkeypatch.delenv("CHAT_RATE_LIMIT_PER_MINUTE", raising=False)
         get_settings.cache_clear()
+
+
+def test_session_mint_is_throttled_per_ip(monkeypatch) -> None:
+    from app.routers import chat_router
+
+    calls = {"n": 0}
+
+    def _limit(ip: str) -> tuple[bool, int]:
+        calls["n"] += 1
+        return calls["n"] <= 1, 42
+
+    monkeypatch.setattr(chat_router, "check_session_mint_limit", _limit)
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    assert client.post("/api/v1/session").status_code == 200
+    second = client.post("/api/v1/session")
+    assert second.status_code == 429
+    assert second.headers["Retry-After"] == "42"
+
+
+def test_documents_upsert_returns_422_for_invalid_document(monkeypatch) -> None:
+    monkeypatch.setenv("ADMIN_API_KEY", "secret-token")
+    from app.core.config import get_settings
+    from app.routers import documents_routers
+
+    def _reject(filename: str, content: str) -> dict:
+        raise ValueError("Invalid document format, not written: bad frontmatter")
+
+    monkeypatch.setattr(documents_routers, "upsert_document", _reject)
+    get_settings.cache_clear()
+    try:
+        from app.main import create_app
+
+        client = TestClient(create_app())
+        res = client.post(
+            "/api/v1/documents/upsert",
+            headers={"X-Admin-Token": "secret-token"},
+            json={"filename": "bad", "content": "x"},
+        )
+        assert res.status_code == 422
+        assert "Invalid document" in res.json()["detail"]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_stream_uses_typed_sse_events() -> None:
+    client = TestClient(app)
+    token = client.post("/api/v1/session").json()["session_token"]
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat",
+        json={"query": "hi", "stream": True},
+        headers={"X-Session-Token": token},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: token" in body
+    assert '"type": "token"' in body
+    assert "event: done" in body
+    assert "event: meta" not in body  # eval context off by default
+    assert "[DONE]" not in body
+
+
+def test_stream_emits_error_event_on_unexpected_failure(monkeypatch) -> None:
+    from app.routers import chat_router
+
+    async def _boom(query: str, sender: str, turn_sink=None):
+        raise RuntimeError("connection reset")
+        yield  # pragma: no cover — keeps this an async generator
+
+    monkeypatch.setattr(chat_router, "handle_turn_stream", _boom)
+    client = TestClient(app)
+    token = client.post("/api/v1/session").json()["session_token"]
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat",
+        json={"query": "hi", "stream": True},
+        headers={"X-Session-Token": token},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert "event: error" in body
+    assert "Please try again" in body
+    assert "event: done" in body

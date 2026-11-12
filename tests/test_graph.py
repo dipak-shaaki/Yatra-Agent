@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 
+import app.agent.graph as graph_module
 from app.agent.graph import Turn, TurnGraph
 
 
@@ -155,3 +156,19 @@ def test_out_of_scope_stage2_short_circuits() -> None:
     assert turn.reply == "Out of scope reply"
     assert turn.retrieved_context == []
     assert turn.tools_called == []
+
+
+def test_failed_agent_reply_is_not_stored_as_assistant(monkeypatch) -> None:
+    stored: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        graph_module,
+        "append_message",
+        lambda sender, role, content: stored.append((role, content)),
+    )
+
+    # None = failed turn: keep the user message, drop the assistant reply.
+    asyncio.run(graph_module._append_turn_messages("user-1", "q", None))
+    assert stored == [("user", "q")]
+
+    asyncio.run(graph_module._append_turn_messages("user-1", "q", "answer"))
+    assert stored == [("user", "q"), ("user", "q"), ("assistant", "answer")]

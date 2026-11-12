@@ -1,10 +1,12 @@
 """Corpus metadata: name resolution from frontmatter aliases, controlled
 vocabularies, and the schema-derived comparison sections."""
 
+from app.data_ingestion import corpus_meta
 from app.data_ingestion.corpus_meta import (
     comparison_sections,
     destination_names,
     get_corpus_chunks,
+    get_corpus_snapshot,
     get_destinations,
     resolve_destination,
 )
@@ -56,3 +58,26 @@ def test_corpus_chunks_have_section_and_source_metadata() -> None:
     for chunk in chunks:
         assert chunk["metadata"]["source_file"].endswith(".md")
         assert chunk["metadata"]["section_title"]
+
+
+def test_snapshot_rebuilds_when_shared_version_changes(monkeypatch) -> None:
+    state = {"version": "1"}
+    loaded: list[str] = []
+
+    def _fake_load(corpus_dir: str, version: str) -> corpus_meta.CorpusSnapshot:
+        loaded.append(version)
+        return corpus_meta.CorpusSnapshot(version=version, destinations=(), chunks=())
+
+    monkeypatch.setattr(corpus_meta, "current_corpus_version", lambda: state["version"])
+    monkeypatch.setattr(corpus_meta, "_load_snapshot", _fake_load)
+    corpus_meta.reset_corpus_meta()
+    try:
+        first = get_corpus_snapshot()
+        assert get_corpus_snapshot() is first
+        assert loaded == ["1"]  # cached within a version
+
+        state["version"] = "2"  # another worker upserted
+        assert get_corpus_snapshot() is not first
+        assert loaded == ["1", "2"]
+    finally:
+        corpus_meta.reset_corpus_meta()

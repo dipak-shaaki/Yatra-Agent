@@ -1,5 +1,6 @@
 """Unit tests for the eval harness logic (no LLM, no server, no index)."""
 
+import httpx
 import pytest
 
 from eval.answer_judge import _build_prompt
@@ -7,7 +8,7 @@ from scripts import run_eval
 from scripts.eval_answers import _percentile, _required_verdicts, _tool_selection_pass
 from scripts.eval_paths import input_path
 from scripts.eval_retrieval import bootstrap_ci, precision_recall_rr
-from scripts.run_eval import validate_api_url
+from scripts.run_eval import _ApiOriginTransport, validate_api_url
 
 
 def test_required_verdicts_follow_category_and_flags() -> None:
@@ -114,14 +115,21 @@ def test_api_url_requires_public_http_destination(monkeypatch) -> None:
         "getaddrinfo",
         lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 8000))],
     )
-    with pytest.raises(ValueError, match="non-public"):
+    with pytest.raises(ValueError, match="private, link-local, or reserved"):
         validate_api_url("http://example.test")
-    assert validate_api_url("http://example.test", allow_private=True)
+    target = validate_api_url("http://localhost:8000/api/v1", allow_loopback=True)
+    assert target.host == "localhost"
+    assert target.addresses[0].is_loopback
 
 
 def test_api_url_rejects_non_http_schemes() -> None:
     with pytest.raises(ValueError, match="http://"):
         validate_api_url("file:///etc/passwd")
+
+
+def test_api_url_rejects_metadata_hosts() -> None:
+    with pytest.raises(ValueError, match="metadata"):
+        validate_api_url("http://metadata.google.internal/latest/meta-data")
 
 
 def test_api_url_validation_rejects_private_dns_targets(monkeypatch) -> None:
@@ -131,5 +139,69 @@ def test_api_url_validation_rejects_private_dns_targets(monkeypatch) -> None:
         lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 8000))],
     )
 
-    with pytest.raises(ValueError, match="non-public address"):
+    with pytest.raises(ValueError, match="private, link-local, or reserved"):
         validate_api_url("http://example.test/api/v1")
+
+
+def test_api_url_requires_exact_trusted_host_and_https(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_eval.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    with pytest.raises(ValueError, match="not allowlisted"):
+        validate_api_url("https://api.example.test/api/v1")
+    target = validate_api_url(
+        "https://api.example.test/api/v1",
+        allowed_hosts=frozenset({"api.example.test"}),
+    )
+    assert target.host == "api.example.test"
+    with pytest.raises(ValueError, match="HTTPS"):
+        validate_api_url(
+            "http://api.example.test/api/v1",
+            allowed_hosts=frozenset({"api.example.test"}),
+        )
+
+
+def test_private_lan_addresses_stay_blocked_for_local_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_eval.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("10.0.0.12", 8000))],
+    )
+    with pytest.raises(ValueError, match="private, link-local, or reserved"):
+        validate_api_url("http://10.0.0.12:8000/api/v1", allow_loopback=True)
+
+
+def test_api_origin_transport_routes_fixed_paths_to_validated_origin(
+    monkeypatch,
+) -> None:
+    class CaptureTransport(httpx.BaseTransport):
+        request: httpx.Request | None = None
+
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            self.request = request
+            return httpx.Response(200, request=request)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        run_eval.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    target = validate_api_url(
+        "https://api.example.test/api/v1",
+        allowed_hosts=frozenset({"api.example.test"}),
+    )
+    transport = _ApiOriginTransport(target, False)
+    capture = CaptureTransport()
+    transport._transport = capture
+
+    request = httpx.Request("POST", "http://eval.invalid/api/v1/session")
+    transport.handle_request(request)
+
+    assert capture.request is not None
+    assert str(capture.request.url) == "https://api.example.test/api/v1/session"
+    assert capture.request.headers["host"] == "api.example.test"

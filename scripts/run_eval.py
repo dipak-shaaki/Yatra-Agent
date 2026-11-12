@@ -17,9 +17,11 @@ no matter where it is launched from; every knob is a CLI flag.
 import argparse
 import ipaddress
 import json
+import os
 import socket
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -29,13 +31,40 @@ import httpx
 from scripts.eval_paths import input_path, output_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TRUSTED_API_HOSTS_ENV = "YATRA_EVAL_ALLOWED_API_HOSTS"
+
+
+@dataclass(frozen=True)
+class ValidatedApiTarget:
+    url: str
+    host: str
+    port: int
+    addresses: tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]
+
+
+def _normalize_host(host: str) -> str:
+    host = host.strip().lower().rstrip(".")
+    try:
+        return str(ipaddress.ip_address(host))
+    except ValueError:
+        if not host or "%" in host:
+            raise ValueError("Invalid API host")
+        return host.encode("idna").decode("ascii")
+
+
+def _trusted_api_hosts() -> frozenset[str]:
+    configured = os.environ.get(TRUSTED_API_HOSTS_ENV, "")
+    return frozenset(
+        _normalize_host(host) for host in configured.split(",") if host.strip()
+    )
 
 
 class _PinnedNetworkBackend(httpcore.SyncBackend):
-    """Resolve each socket destination once, validate it, and connect to that IP."""
+    """Connect only to the validated DNS answers captured before the request."""
 
-    def __init__(self, allow_private: bool) -> None:
-        self.allow_private = allow_private
+    def __init__(self, target: ValidatedApiTarget, allow_loopback: bool) -> None:
+        self.target = target
+        self.allow_loopback = allow_loopback
 
     def connect_tcp(
         self,
@@ -45,25 +74,14 @@ class _PinnedNetworkBackend(httpcore.SyncBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
-        addresses = list(
-            dict.fromkeys(
-                item[4][0]
-                for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-            )
-        )
-        if not addresses:
-            raise OSError(f"API host resolved to no addresses: {host}")
-        resolved = [
-            ipaddress.ip_address(address.split("%", 1)[0]) for address in addresses
-        ]
-        if not self.allow_private and any(
-            not address.is_global for address in resolved
-        ):
-            raise OSError(f"API host resolves to a non-public address: {host}")
-        # Passing a numeric address to SyncBackend prevents a second DNS lookup
-        # between validation and connect (the TLS layer still uses the URL host).
+        if _normalize_host(host) != self.target.host or port != self.target.port:
+            raise OSError("Request destination does not match its validated API target")
+        non_public = any(not address.is_global for address in self.target.addresses)
+        loopback_target = all(address.is_loopback for address in self.target.addresses)
+        if non_public and not (self.allow_loopback and loopback_target):
+            raise OSError("API target is no longer permitted")
         last_error = None
-        for address in resolved:
+        for address in self.target.addresses:
             try:
                 return super().connect_tcp(
                     str(address), port, timeout, local_address, socket_options
@@ -75,42 +93,83 @@ class _PinnedNetworkBackend(httpcore.SyncBackend):
 
 
 class _PinnedHTTPTransport(httpx.HTTPTransport):
-    def __init__(self, allow_private: bool) -> None:
+    def __init__(self, target: ValidatedApiTarget, allow_loopback: bool) -> None:
         super().__init__(trust_env=False)
-        self._pool._network_backend = _PinnedNetworkBackend(allow_private)
+        self._pool._network_backend = _PinnedNetworkBackend(target, allow_loopback)
 
 
-def _public_addresses(host: str, addresses: set[str]) -> None:
-    if host.lower().rstrip(".") in {"localhost", "metadata.google.internal"}:
-        raise ValueError("API host is not permitted")
-    for address in addresses:
-        ip = ipaddress.ip_address(address.split("%", 1)[0])
-        if not ip.is_global:
-            raise ValueError(f"API host resolves to a non-public address: {ip}")
+class _ApiOriginTransport(httpx.BaseTransport):
+    """Route fixed relative API paths through a previously validated origin."""
+
+    def __init__(self, target: ValidatedApiTarget, allow_loopback: bool) -> None:
+        self._origin = httpx.URL(target.url)
+        self._transport = _PinnedHTTPTransport(target, allow_loopback)
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        request.url = request.url.copy_with(
+            scheme=self._origin.scheme,
+            host=self._origin.host,
+            port=self._origin.port,
+        )
+        request.headers["Host"] = self._origin.netloc.decode("ascii")
+        return self._transport.handle_request(request)
+
+    def close(self) -> None:
+        self._transport.close()
 
 
-def validate_api_url(url: str, *, allow_private: bool = False) -> str:
-    """Require HTTP(S) and reject DNS answers that are not public by default."""
+def validate_api_url(
+    url: str,
+    *,
+    allow_loopback: bool = False,
+    allowed_hosts: frozenset[str] | None = None,
+) -> ValidatedApiTarget:
+    """Require an allowlisted HTTPS API, except explicitly enabled loopback."""
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("API URL must use http:// or https:// and include a host")
-    if parsed.username or parsed.password or parsed.fragment:
-        raise ValueError("API URL must not contain credentials or a fragment")
+    if parsed.username or parsed.password or parsed.fragment or parsed.query:
+        raise ValueError("API URL must not contain credentials, query, or fragment")
+    host = _normalize_host(parsed.hostname)
+    if host in {"metadata", "metadata.google.internal"}:
+        raise ValueError("Cloud metadata hosts are not permitted")
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        addresses = {
+        address_texts = dict.fromkeys(
             item[4][0]
-            for item in socket.getaddrinfo(
-                parsed.hostname, port, type=socket.SOCK_STREAM
-            )
-        }
+            for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        )
     except (OSError, ValueError) as exc:
-        raise ValueError(f"API host could not be resolved: {parsed.hostname}") from exc
-    if not addresses:
+        raise ValueError(f"API host could not be resolved: {host}") from exc
+    if not address_texts:
         raise ValueError("API host resolved to no addresses")
-    if not allow_private:
-        _public_addresses(parsed.hostname, addresses)
-    return url.rstrip("/")
+    addresses = tuple(
+        ipaddress.ip_address(address.split("%", 1)[0]) for address in address_texts
+    )
+    is_loopback_host = host == "localhost" or _is_loopback_ip(host)
+    if is_loopback_host and allow_loopback and all(ip.is_loopback for ip in addresses):
+        return ValidatedApiTarget(url.rstrip("/"), host, port, addresses)
+    if is_loopback_host:
+        raise ValueError("Loopback API hosts require --allow-local-api")
+    if any(not ip.is_global for ip in addresses):
+        raise ValueError(
+            "API host resolves to localhost, private, link-local, or reserved IP"
+        )
+    if parsed.scheme != "https":
+        raise ValueError("Public API URLs must use HTTPS")
+    trusted_hosts = allowed_hosts if allowed_hosts is not None else _trusted_api_hosts()
+    if host not in trusted_hosts:
+        raise ValueError(
+            f"API host is not allowlisted; configure {TRUSTED_API_HOSTS_ENV}"
+        )
+    return ValidatedApiTarget(url.rstrip("/"), host, port, addresses)
+
+
+def _is_loopback_ip(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def load_cases(eval_dir: Path) -> list[dict]:
@@ -190,16 +249,15 @@ def _print_case_result(result: dict) -> None:
 
 def _run_cases(
     cases: list[dict],
-    api_url: str,
+    target: ValidatedApiTarget,
     delay: float,
     timeout: float,
-    allow_private_api: bool,
+    allow_loopback: bool,
 ) -> list[dict]:
     results = []
-    validated_api_url = validate_api_url(api_url, allow_private=allow_private_api)
     with httpx.Client(
-        base_url=validated_api_url,
-        transport=_PinnedHTTPTransport(allow_private_api),
+        base_url="http://eval.invalid/api/v1",
+        transport=_ApiOriginTransport(target, allow_loopback),
         follow_redirects=False,
         trust_env=False,
         timeout=timeout,
@@ -224,12 +282,17 @@ def main() -> int:
     parser.add_argument(
         "--api-url",
         default="http://localhost:8000/api/v1",
-        help="Base URL of the running Yatra API (default: %(default)s)",
+        help=(
+            "Base URL of the running Yatra API. Public hosts must be HTTPS and "
+            f"listed in {TRUSTED_API_HOSTS_ENV}; default: %(default)s"
+        ),
     )
     parser.add_argument(
+        "--allow-local-api",
         "--allow-private-api",
+        dest="allow_loopback",
         action="store_true",
-        help="Allow private API addresses for an explicitly trusted local evaluation server",
+        help="Allow a loopback API server; private LAN destinations stay blocked",
     )
     parser.add_argument(
         "--eval-dir",
@@ -261,7 +324,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        api_url = validate_api_url(args.api_url, allow_private=args.allow_private_api)
+        target = validate_api_url(args.api_url, allow_loopback=args.allow_loopback)
         eval_dir = input_path(args.eval_dir)
         results_path = output_path(args.results)
     except ValueError as exc:
@@ -274,14 +337,14 @@ def main() -> int:
         print(f"No cases found in {eval_dir}", file=sys.stderr)
         return 1
 
-    print(f"Running {len(cases)} eval cases against {api_url}...\n")
+    print(f"Running {len(cases)} eval cases against {target.url}...\n")
 
     results = _run_cases(
         cases,
-        api_url,
+        target,
         args.delay,
         args.timeout,
-        args.allow_private_api,
+        args.allow_loopback,
     )
 
     results_path.parent.mkdir(parents=True, exist_ok=True)

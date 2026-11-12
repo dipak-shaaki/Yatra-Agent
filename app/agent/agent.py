@@ -133,6 +133,33 @@ def _assistant_tool_message(state: _ProviderRound) -> dict:
     }
 
 
+def _record_provider_usage(
+    state: _ProviderRound, model: str, iteration: int, elapsed: str
+) -> None:
+    usage = state.usage
+    usage_fields = (
+        {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
+        if usage
+        else {}
+    )
+    log_event(
+        "llm_call_stream",
+        model=model,
+        iteration=iteration,
+        time_secs=elapsed,
+        **usage_fields,
+    )
+    if usage:
+        record_llm_usage(
+            getattr(usage, "prompt_tokens", 0),
+            getattr(usage, "completion_tokens", 0),
+        )
+
+
 def _provider_client(run: AgentResult):
     try:
         return get_async_groq_client()
@@ -275,39 +302,25 @@ async def run_agent_stream(
             return
 
         llm_elapsed_s = f"{time.perf_counter() - llm_start:.2f}"
-        log_event(
-            "llm_call_stream",
-            model=settings.agent_model,
-            iteration=iteration + 1,
-            time_secs=llm_elapsed_s,
-            **(
-                {
-                    "prompt_tokens": provider_round.usage.prompt_tokens,
-                    "completion_tokens": provider_round.usage.completion_tokens,
-                    "total_tokens": provider_round.usage.total_tokens,
-                }
-                if provider_round.usage
-                else {}
-            ),
+        _record_provider_usage(
+            provider_round, settings.agent_model, iteration + 1, llm_elapsed_s
         )
-        if provider_round.usage:
-            record_llm_usage(
-                getattr(provider_round.usage, "prompt_tokens", 0),
-                getattr(provider_round.usage, "completion_tokens", 0),
+
+        if not _finish_if_answer(provider_round, run, iteration + 1, turn_start):
+            messages.append(_assistant_tool_message(provider_round))
+            # Independent tool calls in one round run concurrently.
+            tool_messages = await asyncio.gather(
+                *(
+                    _execute_tool_call(tc, run)
+                    for tc in provider_round.tool_calls.values()
+                )
             )
+            messages.extend(tool_messages)
+            continue
 
-        if _finish_if_answer(provider_round, run, iteration + 1, turn_start):
-            if not provider_round.content.strip():
-                yield AGENT_ERROR_REPLY
-            return
-
-        messages.append(_assistant_tool_message(provider_round))
-
-        # Independent tool calls in one round run concurrently.
-        tool_messages = await asyncio.gather(
-            *(_execute_tool_call(tc, run) for tc in provider_round.tool_calls.values())
-        )
-        messages.extend(tool_messages)
+        if not provider_round.content.strip():
+            yield AGENT_ERROR_REPLY
+        return
 
     total_s = f"{time.perf_counter() - turn_start:.2f}"
     log_event(

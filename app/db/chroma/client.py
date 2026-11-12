@@ -68,6 +68,11 @@ def verify_embedding_compat(dimension: int) -> None:
         metadata.get("embedding_model") != settings.embedding_model
         or metadata.get("embedding_dimension") != dimension
     ):
+        # Chroma rejects `hnsw:space` in modify() ("changing the distance
+        # function... not supported") and the distance now lives in the
+        # collection configuration, so drop legacy hnsw:* keys from the
+        # metadata we write back.
+        metadata = {k: v for k, v in metadata.items() if not k.startswith("hnsw:")}
         metadata.update(
             {
                 "embedding_model": settings.embedding_model,

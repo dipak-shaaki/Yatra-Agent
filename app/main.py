@@ -32,9 +32,7 @@ async def lifespan(app: FastAPI):
     # user request doesn't pay cold-load latency, then verify the collection
     # was built with the same model/dimension (silent garbage otherwise).
     model = get_embedding_model()
-    await asyncio.to_thread(
-        verify_embedding_compat, model.get_sentence_embedding_dimension()
-    )
+    await asyncio.to_thread(verify_embedding_compat, model.get_embedding_dimension())
 
     # Warn-only Redis check — the app is happy to start; session memory
     # will return empty history until Redis becomes reachable.

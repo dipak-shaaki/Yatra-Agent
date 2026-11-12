@@ -5,7 +5,13 @@ import pytest
 
 from app.core.config import get_settings
 from app.data_ingestion.corpus_meta import get_corpus_chunks
-from app.db.chroma.client import get_chroma_client, reset_collection, upsert_chunks
+from app.db.chroma.client import (
+    get_chroma_client,
+    get_collection,
+    reset_collection,
+    upsert_chunks,
+    verify_embedding_compat,
+)
 from app.retrieval import hybrid_retriever
 from app.retrieval.bm25_index import reset_bm25_index
 from tests.fake_embeddings import fake_embed_documents, fake_embedding
@@ -48,6 +54,35 @@ def test_hybrid_search_returns_fused_chunks_from_real_chroma(
         assert {"id", "text", "metadata", "score"} <= set(result)
         assert result["text"]
         assert result["metadata"]["source_file"].endswith(".md")
+
+
+def test_verify_embedding_compat_backfills_legacy_metadata(temp_chroma) -> None:
+    """Regression: a collection created before dimension metadata (and with
+    legacy hnsw:space metadata) must be backfilled without Chroma rejecting
+    the modify() call — this crashed app startup."""
+    reset_collection()
+    get_collection()
+
+    verify_embedding_compat(768)
+
+    metadata = get_collection().metadata or {}
+    assert metadata["embedding_dimension"] == 768
+    assert metadata["embedding_model"] == get_settings().embedding_model
+
+    verify_embedding_compat(768)  # already backfilled -> no modify, no raise
+
+
+def test_verify_embedding_compat_rejects_model_mismatch(
+    temp_chroma, monkeypatch
+) -> None:
+    reset_collection()
+    get_collection()
+
+    monkeypatch.setenv("EMBEDDING_MODEL", "some/other-model")
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="Embedding model mismatch"):
+        verify_embedding_compat(768)
 
 
 @pytest.mark.usefixtures("temp_chroma")

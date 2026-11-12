@@ -30,9 +30,10 @@ gates calibrated with headroom (Precision@5 ≥ 0.15, Recall@5 ≥ 0.85,
 MRR@5 ≥ 0.70) and a comment warning not to "fix" the precision ceiling
 (most cases label one chunk, so P caps near 1/5).
 *Before:* hybrid scored P=0.204 / R=0.792 / MRR=0.723 (misleading);
-*after:* hybrid P=0.200 / R=0.960 / MRR=0.833 — and the ablation shows
-why hybrid: dense R=0.980/MRR=0.797, BM25 R=0.920/MRR=0.707. The gate runs
-in CI on every push.
+*after:* hybrid P=0.193 / R=0.955 / MRR=0.751 over 176 scored cases
+(95% bootstrap CIs reported for each metric). The ablation shows why the
+choice matters: dense R=0.986 / MRR=0.800, BM25 R=0.812 / MRR=0.617. The
+gate runs in CI on every push (hybrid only; the other two are ablations).
 
 **3. Empty streamed answers (reasoning tokens vs max_tokens)**
 The reasoning model (`openai/gpt-oss-20b`) spends reasoning tokens from the
@@ -67,11 +68,13 @@ metric (mean/max in the eval report).
 ## Prepared interview answers
 
 **Why hybrid retrieval?** Dense embeddings miss exact identifiers ("5,106
-m pass", "RAP permit") and BM25 misses paraphrase; measured on the labeled
-set: dense Recall@5 0.98 but MRR 0.80, BM25 recall 0.92, fused (RRF, k=60)
-keeps recall near dense while ranking better (MRR 0.83). The fusion is
-score-free rank fusion, so no score normalization between cosine distance
-and BM25. Numbers from `scripts/eval_retrieval.py --retriever <name>`.
+m pass", "RAP permit") and BM25 misses paraphrase. On the expanded labeled
+set (176 retrieval-routed cases, 95% CIs): dense Recall@5 0.986 / MRR 0.800,
+BM25 recall 0.812 / MRR 0.617, fused (RRF, k=60) recall 0.955 / MRR 0.751.
+The fusion is score-free rank fusion, so no score normalization between
+cosine distance and BM25, and the `--retriever` ablation is committed so the
+trade-off stays visible instead of assumed. Numbers from
+`python -m scripts.eval_retrieval --retriever <name>`.
 
 **What failed in your eval and what did you change?** Two concrete
 failures: (a) case selection — I was scoring metadata-tool questions
@@ -80,9 +83,9 @@ scoring only the retrieval-path cases and keeping an ablation mode.
 (b) judging — judging with the generating model inherits its blind spots,
 so the judge is a different model; also, cases that capture no context
 (metadata tools, short-circuits) are not required to be faithful to a
-context they never saw. One real retrieval miss remains
-(`discovery_008`, day-trip discovery) — a known gap, visible in the gate
-output rather than hidden.
+context they never saw. Remaining retrieval misses are visible in the gate
+output (8/176 full misses on hybrid, mostly synthetic budget/altitude
+queries) rather than hidden.
 
 **Why an agent instead of a fixed RAG pipeline?** The question type
 determines the right retrieval: comparisons need per-section chunk

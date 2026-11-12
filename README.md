@@ -10,7 +10,7 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 - **Cost-aware turn handling** — a regex fast path answers greetings/acknowledgments with 0 LLM calls; an LLM classifier catches the rest. Repeated filler triggers a loop break.
 - **Conversation memory** — Redis stores per-session history and the filler counter.
 - **SSE streaming** — `POST /api/v1/chat` with `{"query": ..., "stream": true}` streams the answer token-by-token; sessions are minted via `POST /api/v1/session` and rate-limited per token.
-- **Evaluation harness** — 60 labeled eval cases across 9 categories (factual, comparison, discovery, budget, out-of-scope, adversarial, ambiguous, filler, unclear), a chunk-level retrieval gate (Precision@K / Recall@K / MRR), and an LLM answer judge scoring faithfulness, correctness, refusals, and hedging. Both the retrieval gate and the test suite run in CI.
+- **Evaluation harness** — 78 labeled behavioral cases across 9 categories (factual, comparison, discovery, budget, out-of-scope, adversarial, ambiguous, filler, unclear) plus 145 retrieval-routed cases, a chunk-level retrieval gate (Precision@K / Recall@K / MRR with bootstrap CIs), and an LLM answer judge scoring faithfulness, correctness, refusals, and hedging. Both the retrieval gate and the test suite run in CI.
 
 ## Tech Stack
 
@@ -45,7 +45,7 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 ├── data/
 │   ├── corpus/            # 10 destination Markdown documents
 │   └── raw/               # raw destination JSON documents
-├── eval/                  # 60 eval cases (9 categories) + answer judge
+├── eval/                  # behavioral + retrieval cases, answer judge, baseline
 ├── scripts/               # build_index, eval_retrieval, run_eval, eval_answers
 ├── tests/                 # unit + integration tests (pytest)
 ├── docker/                # docker-compose (API + Redis)
@@ -54,6 +54,55 @@ Yatra is a conversational AI assistant covering 10 curated Nepal destinations �
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full module map.
+
+## Architecture
+
+```
+Client (React UI / curl)
+  │  POST /api/v1/session                     POST /api/v1/chat
+  ▼                                              │
+FastAPI (app/main.py) ── JSON logs (request/session id), /metrics, /ready
+  │                                              │
+  │                                   ┌──────────▼───────────┐
+  │                                   │ TurnGraph            │
+  │                                   │ stage 1: regex ──────┼──► filler reply, 0 LLM calls
+  │                                   │ stage 2: classifier ─┼──► new / filler / unclear / out_of_scope
+  │                                   │ loop-break ──────────┼──► repeated-filler guard
+  │                                   │ agent loop (≤5) ─────┘
+  │                                   └──────────┬───────────┘
+  │                                              │ tool calls
+  │            ┌─────────────────────────────────┼──────────────────────────┐
+  │            ▼                                 ▼                          ▼
+  │   search_destinations              filter_by_criteria         compare_destinations
+  │            │                                 │                  calculate_budget_estimate
+  │      hybrid_search                           │                          │
+  │   ┌────────┴────────┐                        └──────► corpus_meta (versioned snapshot)
+  │   ▼                 ▼
+  │ Chroma (dense)   BM25 (sparse) ──► RRF fusion ──► top-5 chunks
+  │
+  └── Redis: session tokens · history · rate limits · corpus version
+      Groq: agent_model (gpt-oss-20b) · router_model (8B classifier) · judge_model
+```
+
+## Evaluation Results
+
+Retrieval gate over all labeled cases whose expected path is
+`search_destinations` (176 cases, K=5). Brackets are 95% bootstrap CIs
+(1000 resamples, seed 42). Commands:
+`python -m scripts.eval_retrieval --retriever <name>`.
+
+| Retriever | Precision@5 | Recall@5 | MRR@5 | Full misses |
+| --- | --- | --- | --- | --- |
+| **hybrid (gated)** | **0.193** [0.186, 0.199] | **0.955** [0.920, 0.983] | **0.751** [0.697, 0.798] | 8 |
+| dense | 0.200 [0.195, 0.205] | 0.986 [0.969, 1.000] | 0.800 [0.755, 0.839] | 2 |
+| BM25 | 0.164 [0.151, 0.176] | 0.812 [0.750, 0.869] | 0.617 [0.549, 0.679] | 33 |
+
+The ablation is reported honestly: on the expanded synthetic set dense ranks
+best, BM25 fails the gate, and hybrid sits between them. CI gates only hybrid
+(`P≥0.15 / R≥0.85 / MRR≥0.70`); the others are diagnostics, not targets.
+`eval/BASELINE.md` pins the git SHA, settings and exact commands behind these
+numbers. The behavioral/LLM-judge half needs a valid `GROQ_API_KEY` and a
+running server (`python -m scripts.run_eval` then `python -m scripts.eval_answers`).
 
 ## Quick Start
 
@@ -74,6 +123,10 @@ GROQ_API_KEY=gsk_... docker compose -f docker/docker-compose.yml up --build
 ```
 
 Docs at `http://localhost:8000/docs`. UI: `cd ui && npm install && npm run dev`.
+
+Design decisions are recorded in [`docs/decisions/`](docs/decisions/):
+[Chroma](docs/decisions/0001-chroma.md), [no agent framework](docs/decisions/0002-no-framework.md),
+[model choice](docs/decisions/0003-model-choice.md).
 
 ## License
 

@@ -260,8 +260,11 @@ or overwrite another session's history.
 ### 4.5 Vector store (`app/db/chroma/client.py`)
 
 Persistent Chroma under `data/chroma_db`, collection `yatra_destinations`,
-cosine space. Chunks are upserted by ID; `delete_chunks_by_source_file`
-removes stale chunks for a file before re-ingesting.
+cosine space. The collection records `embedding_model` + `embedding_dimension`
+in its metadata; startup verifies both against the configured/model dimensions
+and fails fast on a mismatch instead of silently returning garbage. Chunks are
+upserted by ID; `get_chunk_ids_by_source_file` + `delete_chunks(ids)` remove
+only the IDs that disappeared, after the new chunks are in place.
 
 ---
 
@@ -271,7 +274,8 @@ removes stale chunks for a file before re-ingesting.
 
 Chunk the corpus → embed → reset the Chroma collection → upsert everything.
 Run after the corpus changes wholesale, or to initialise a fresh checkout.
-Runs as a plain `python scripts/...` from anywhere (sys.path bootstrap).
+Run as `python -m scripts.build_index` from the project root (no sys.path
+bootstrap).
 
 ### 5.2 On-disk persistence
 
@@ -282,11 +286,14 @@ markdown corpus itself.
 ### 5.3 Document upsert (`app/services/document_service.py`)
 
 `POST /api/v1/documents/upsert` validates the frontmatter against the
-pydantic model, writes `data/corpus/<filename>.md`, re-chunks the single
-file, deletes that file's old chunks from Chroma, re-embeds, upserts, and
-bumps the Redis corpus version so every worker's BM25 cache invalidates.
+pydantic model and builds chunks in memory, embeds every chunk, writes
+`data/corpus/<filename>.md` atomically (temp file + `os.replace`), upserts the
+new chunks, deletes only the IDs that disappeared, then bumps the Redis corpus
+version so every worker's corpus snapshot / BM25 index invalidates. An invalid
+document or a failed embedding writes nothing; the upsert-before-delete order
+means there is never a window where the destination has no chunks.
 Returns `{filename, is_update, old_chunks_deleted, new_chunks_written,
-chunk_ids}`.
+chunk_ids}` (422 for a schema-invalid document).
 
 ---
 
@@ -296,16 +303,23 @@ All eval tooling lives in `scripts/` and `eval/`:
 
 | Script | What it measures | Needs |
 | --- | --- | --- |
-| `scripts/eval_retrieval.py` | Chunk-level Precision@5 / Recall@5 / MRR@5 against labeled `source_chunks`, with `--gate-*` thresholds that exit nonzero; `--retriever dense\|bm25` doubles as a hybrid ablation | Built Chroma index + embedding model (no LLM, no server) |
-| `scripts/run_eval.py` | End-to-end per-case behavior over HTTP; mints a fresh session per case; captures `retrieved_context` + `tools_called` per turn (server must run with `EXPOSE_EVAL_CONTEXT=true`) | Running server + Groq |
-| `scripts/eval_answers.py` | LLM answer judge over `eval/results.jsonl`, per-category verdict requirements, tool-selection accuracy (any-of), p50/p95 latency; writes `eval/judged.jsonl` | Groq (judge model) |
+| `python -m scripts.eval_retrieval` | Chunk-level Precision@5 / Recall@5 / MRR@5 against labeled `source_chunks`, with 95% bootstrap CIs and `--gate-*` thresholds that exit nonzero; `--retriever dense\|bm25` doubles as a hybrid ablation | Built Chroma index + embedding model (no LLM, no server) |
+| `python -m scripts.run_eval` | End-to-end per-case behavior over HTTP; mints a fresh session per case; captures `retrieved_context` + `tools_called` per turn (server must run with `EXPOSE_EVAL_CONTEXT=true`) | Running server + Groq |
+| `python -m scripts.eval_answers` | LLM answer judge over `eval/results.jsonl`, per-category verdict requirements, exact-set tool-selection accuracy, p50/p95 latency, mean LLM calls; writes `eval/judged.jsonl` | Groq (judge model) |
 
-Evaluation cases: `eval/cases/*.jsonl` — **60 cases across 9 categories**
-(factual 20, comparison 6, discovery 8, budget 8, out_of_scope 8,
-adversarial 4, ambiguous_conflicting 2, filler 2, unclear 2). Every case
+Evaluation cases: `eval/cases/*.jsonl` — **78 behavioral cases across 9
+categories** (factual 20, comparison 6, discovery 8, budget 8, out_of_scope 8,
+adversarial 4, ambiguous_conflicting 8, filler 8, unclear 8). Every case
 labels `source_docs`, `source_chunks`, `expected_tools`, `category`,
 `difficulty`, plus per-case `requires_refusal` / `hedge` flags; all facts
-are verified against the corpus.
+are verified against the corpus. `eval/retrieval_cases/*.jsonl` adds **145
+retrieval-routed cases** generated from the corpus frontmatter (per-destination
+best time, route, duration, difficulty, budget, permits, altitude, plus
+exact-term/number queries) so the retrieval gate is not fitting to ~25 cases.
+
+`eval_retrieval.py` loads both directories by default (`--eval-dir` is
+repeatable). `eval/BASELINE.md` records a committed baseline with the git SHA
+and settings used.
 
 Two design notes:
 
@@ -313,8 +327,9 @@ Two design notes:
   `search_destinations` — discovery/budget questions go through the
   metadata tools, so scoring them against hybrid search would measure
   nothing. Gates are calibrated below current hybrid numbers
-  (P=0.20 / R=0.96 / MRR=0.83); precision tops out near
-  |expected|/K because most cases label a single chunk.
+  (P=0.19 / R=0.96 / MRR=0.75 over 176 scored cases); precision tops out
+  near |expected|/K because most cases label a single chunk. BM25 alone
+  misses the same gate (it is reported as an ablation, not gated in CI).
 - `eval/answer_judge.py` (model: `judge_model`, different from the
   generator) returns `faithful` / `correct` / `refusal_correct` / `hedged`
   (true/false/null). A case passes when every verdict its category
@@ -332,20 +347,32 @@ the index and runs the retrieval gate.
 
 - `tests/test_agent.py` — agent loop with a stubbed AsyncGroq: split-delta
   tool-call reassembly, AgentResult capture, empty-content guard,
-  max-iterations bound.
-- `tests/test_app.py` — HTTP surface: sessions, auth failures, rate limit,
-  chat modes.
+  max-iterations bound, provider-error replies.
+- `tests/test_app.py` — HTTP surface: sessions + per-IP mint throttle, auth
+  failures, rate limit, chat modes, typed SSE, upsert 422.
 - `tests/test_chunker.py` — chunker logic incl. `None`-metadata handling
   and pre-header Overview capture.
-- `tests/test_corpus_meta.py` — frontmatter model + alias resolution.
+- `tests/test_corpus_meta.py` — frontmatter model + alias resolution and
+  version-aware snapshot rebuilds.
+- `tests/test_document_service.py` — validate/embed-before-write ordering,
+  atomic swap, stale-chunk-only deletion.
 - `tests/test_eval_scripts.py` — eval harness logic (verdict requirements,
-  any-of tool selection, percentiles, retrieval metrics, prompt splicing).
+  exact-set tool selection, percentiles, bootstrap CIs, retrieval metrics,
+  prompt splicing).
 - `tests/test_frontmatter.py` — frontmatter parsing edge cases.
-- `tests/test_graph.py` — turn-handler routing per category.
-- `tests/test_retrieval_units.py` — RRF fusion and BM25Index (no Chroma).
+- `tests/test_graph.py` — turn-handler routing per category; failed replies
+  are not stored as assistant history.
+- `tests/test_hybrid_retriever.py` — real temporary Chroma + deterministic
+  fake embedder, empty-collection path.
+- `tests/test_retrieval_units.py` — RRF fusion, BM25 empty corpus, and the
+  stale-index-after-version-bump regression.
+- `tests/test_stage2_classifier.py` — router model + JSON mode, category
+  parsing, fail-open, no raw user text in logs.
 - `tests/test_tools.py` — the four tools against the real corpus.
 
-Run: `uv run pytest tests/ -v`. Agent/app tests need Redis on localhost:6379.
+Run: `uv run pytest tests/ -v`. A real Redis is used when reachable;
+otherwise the autouse fixture falls back to `fakeredis`, so no daemon is
+required locally.
 
 ---
 
@@ -359,7 +386,7 @@ Host (Redis via Docker):
 uv sync
 cp app/core/.env.example app/core/.env   # set GROQ_API_KEY
 docker compose -f docker/docker-compose.yml up -d redis
-uv run python scripts/build_index.py
+uv run python -m scripts.build_index
 uv run uvicorn app.main:app --reload
 ```
 

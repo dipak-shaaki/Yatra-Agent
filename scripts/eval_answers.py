@@ -52,9 +52,8 @@ def _required_verdicts(result: dict) -> list[str]:
 
 
 def _tool_selection_pass(expected: list[str], actual: list[str]) -> bool:
-    if expected:
-        return bool(set(expected) & set(actual))
-    return not actual  # nothing expected -> nothing may be called
+    """Exact set match: a missing expected tool or an unneeded extra fails."""
+    return set(expected) == set(actual)
 
 
 def _percentile(values: list[float], p: float) -> float:

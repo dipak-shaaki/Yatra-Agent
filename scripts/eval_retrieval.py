@@ -11,11 +11,16 @@ project root, so `app` imports resolve without sys.path hacks.
 
 import argparse
 import json
+import random
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_EVAL_DIRS = [
+    PROJECT_ROOT / "eval" / "cases",
+    PROJECT_ROOT / "eval" / "retrieval_cases",
+]
 
 from app.retrieval.bm25_index import get_bm25_index
 from app.retrieval.hybrid_retriever import hybrid_search
@@ -42,22 +47,38 @@ def _retrievers() -> dict[str, Callable[[str], list[str]]]:
     }
 
 
-def load_cases_with_chunks(eval_dir: Path) -> list[dict]:
+def load_cases_with_chunks(eval_dirs: list[Path]) -> list[dict]:
     """Only cases that are retrieval-scoreable: they must label source_chunks
     AND expect search_destinations — the only tool that runs hybrid_search.
     Discovery/budget questions go through the metadata tools instead, and
     out_of_scope/filler/unclear cases have no labels by design."""
     cases = []
-    for jsonl_file in sorted(eval_dir.glob("*.jsonl")):
-        with open(jsonl_file) as f:
-            for line in f:
-                if line.strip():
-                    case = json.loads(line)
-                    if case.get("source_chunks") and "search_destinations" in case.get(
-                        "expected_tools", []
-                    ):
-                        cases.append(case)
+    for eval_dir in eval_dirs:
+        for jsonl_file in sorted(eval_dir.glob("*.jsonl")):
+            with open(jsonl_file) as f:
+                for line in f:
+                    if line.strip():
+                        case = json.loads(line)
+                        if case.get(
+                            "source_chunks"
+                        ) and "search_destinations" in case.get("expected_tools", []):
+                            cases.append(case)
     return cases
+
+
+def bootstrap_ci(values: list[float], samples: int, seed: int) -> tuple[float, float]:
+    """95% percentile bootstrap CI for the mean. Dependency-free; fixed seed
+    makes the reported interval reproducible in CI and in committed reports."""
+    if not values or samples <= 0:
+        return (0.0, 0.0)
+    rng = random.Random(seed)
+    n = len(values)
+    means = sorted(
+        sum(values[rng.randrange(n)] for _ in range(n)) / n for _ in range(samples)
+    )
+    low = means[int(0.025 * (samples - 1))]
+    high = means[int(0.975 * (samples - 1))]
+    return (low, high)
 
 
 def precision_recall_rr(retrieved: list[str], expected: list[str]) -> dict:
@@ -80,8 +101,25 @@ def main() -> int:
     parser.add_argument(
         "--eval-dir",
         type=Path,
-        default=PROJECT_ROOT / "eval" / "cases",
-        help="Directory of *.jsonl eval cases",
+        action="append",
+        default=None,
+        help=(
+            "Directory of *.jsonl eval cases (repeatable; default: "
+            + ", ".join(str(d.relative_to(PROJECT_ROOT)) for d in DEFAULT_EVAL_DIRS)
+            + ")"
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-samples",
+        type=int,
+        default=1000,
+        help="Bootstrap resamples for 95%% CIs (0 disables; default: %(default)s)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Bootstrap RNG seed (default: %(default)s)",
     )
     parser.add_argument(
         "--retriever",
@@ -113,7 +151,7 @@ def main() -> int:
     # (P=0.20 / R=0.96 / MRR=0.83). Precision tops out near |expected|/K
     # (usually 1 labeled chunk per question) — do not "fix" the low bar by
     # raising it without relabeling more chunks per case.
-    cases = load_cases_with_chunks(args.eval_dir)
+    cases = load_cases_with_chunks(args.eval_dir or DEFAULT_EVAL_DIRS)
     retrieve = _retrievers()[args.retriever]
     print(f"Scoring {args.retriever} retrieval on {len(cases)} cases (K={K})\n")
 
@@ -136,12 +174,23 @@ def main() -> int:
     mean_precision = sum(m["precision"] for m in metrics) / n
     mean_recall = sum(m["recall"] for m in metrics) / n
     mean_rr = sum(m["rr"] for m in metrics) / n
+    p_lo, p_hi = bootstrap_ci(
+        [m["precision"] for m in metrics], args.bootstrap_samples, args.seed
+    )
+    r_lo, r_hi = bootstrap_ci(
+        [m["recall"] for m in metrics], args.bootstrap_samples, args.seed
+    )
+    rr_lo, rr_hi = bootstrap_ci(
+        [m["rr"] for m in metrics], args.bootstrap_samples, args.seed
+    )
     print("\n" + "=" * 60)
     print(
-        f"{args.retriever}: Precision@{K}={mean_precision:.3f}  "
-        f"Recall@{K}={mean_recall:.3f}  MRR@{K}={mean_rr:.3f}  "
-        f"({len(misses)} full misses: {', '.join(misses) or 'none'})"
+        f"{args.retriever}: Precision@{K}={mean_precision:.3f} "
+        f"[{p_lo:.3f}, {p_hi:.3f}]  "
+        f"Recall@{K}={mean_recall:.3f} [{r_lo:.3f}, {r_hi:.3f}]  "
+        f"MRR@{K}={mean_rr:.3f} [{rr_lo:.3f}, {rr_hi:.3f}]"
     )
+    print(f"  n={n}  ({len(misses)} full misses: {', '.join(misses) or 'none'})")
 
     gates = {
         f"precision>={args.gate_precision}": mean_precision >= args.gate_precision,
